@@ -5,19 +5,31 @@
 
 import configargparse
 from distutils.util import strtobool
+import logging
+from omegaconf import OmegaConf
 import os
 
 from neural_sp.bin.train_utils import load_config
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args_train(input_args):
     parser = build_parser()
     user_args, _ = parser.parse_known_args(input_args)
 
+    config = OmegaConf.load(user_args.config)
+
     # register module specific arguments
-    parser = register_args_lm(parser, user_args)
+    parser = register_args_lm(parser, user_args, user_args.lm_type)
     user_args = parser.parse_args()
-    return user_args
+
+    # merge to omegaconf
+    for k, v in vars(user_args).items():
+        if k not in config:
+            config[k] = v
+
+    return config
 
 
 def parse_args_eval(input_args):
@@ -26,28 +38,27 @@ def parse_args_eval(input_args):
 
     # Load a yaml config file
     dir_name = os.path.dirname(user_args.recog_model[0])
-    conf_train = load_config(os.path.join(dir_name, 'conf.yml'))
+    config = load_config(os.path.join(dir_name, 'conf.yml'))
 
-    # register module specific arguments
-    user_args.lm_type = conf_train['lm_type']
-    parser = register_args_lm(parser, user_args)
+    # register module specific arguments to support new args after training
+    parser = register_args_lm(parser, user_args, config.lm_type)
     user_args = parser.parse_args()
-    # NOTE: If new args are registered after training the model, the default value will be set
 
-    # Overwrite config
-    for k, v in conf_train.items():
-        if 'recog' not in k:
-            setattr(user_args, k, v)
+    # Overwrite to omegaconf
+    for k, v in vars(user_args).items():
+        if 'recog' in k or k not in config:
+            config[k] = v
+            logger.info('Overwrite configration: %s => %s' % (k, v))
 
-    return user_args, vars(user_args), dir_name
+    return config, dir_name
 
 
-def register_args_lm(parser, args):
-    if 'gated_conv' in args.lm_type:
+def register_args_lm(parser, args, lm_type):
+    if 'gated_conv' in lm_type:
         from neural_sp.models.lm.gated_convlm import GatedConvLM as module
-    elif args.lm_type == 'transformer':
+    elif lm_type == 'transformer':
         from neural_sp.models.lm.transformerlm import TransformerLM as module
-    elif args.lm_type == 'transformer_xl':
+    elif lm_type == 'transformer_xl':
         from neural_sp.models.lm.transformer_xl import TransformerXL as module
     else:
         from neural_sp.models.lm.rnnlm import RNNLM as module

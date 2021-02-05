@@ -17,7 +17,6 @@ from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_attention_weights
 from neural_sp.bin.train_utils import (
-    compute_subsampling_factor,
     load_checkpoint,
     load_config,
     set_logger
@@ -33,8 +32,7 @@ logger = logging.getLogger(__name__)
 def main():
 
     # Load configuration
-    args, recog_params, dir_name = parse_args_eval(sys.argv[1:])
-    args = compute_subsampling_factor(args)
+    args, dir_name = parse_args_eval(sys.argv[1:])
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'plot.log')):
@@ -129,9 +127,9 @@ def main():
             os.mkdir(save_path)
 
         while True:
-            batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
+            batch, is_new_epoch = dataloader.next(args.recog_batch_size)
             nbest_hyps_id, aws = model.decode(
-                batch['xs'], recog_params, dataloader.idx2token[0],
+                batch['xs'], args, dataloader.idx2token[0],
                 exclude_eos=False,
                 refs_id=batch['ys'],
                 ensemble_models=ensemble_models[1:] if len(ensemble_models) > 1 else [],

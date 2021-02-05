@@ -5,6 +5,8 @@
 
 import configargparse
 from distutils.util import strtobool
+import logging
+from omegaconf import OmegaConf
 import os
 
 from neural_sp.bin.train_utils import load_config
@@ -20,20 +22,36 @@ DECODER_TYPES = ['lstm', 'gru', 'transformer',
                  'lstm_transducer', 'gru_transducer',
                  'asg']
 
+logger = logging.getLogger(__name__)
+
 
 def parse_args_train(input_args):
     parser = build_parser()
-    user_args, _ = parser.parse_known_args(input_args)
+    user_args = parser.parse_known_args(input_args)[0]
+
+    config = OmegaConf.load(user_args.config)
+    if user_args.config2 is not None:
+        config = OmegaConf.merge(config,
+                                 OmegaConf.load(user_args.config2))
 
     # register module specific arguments
-    parser = register_args_encoder(parser, user_args)
-    user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
+    # encoder
+    parser = register_args_encoder(parser, user_args, user_args.enc_type)
+    user_args = parser.parse_known_args(input_args)[0]  # to avoid args conflict
+    # decoder
     parser = register_args_decoder(parser, user_args, user_args.dec_type)
-    if user_args.dec_n_layers_sub1 > 0 and user_args.dec_type != user_args.dec_type_sub1:
-        user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
-        parser = register_args_decoder(parser, user_args, user_args.dec_type_sub1)
+    # auxiliary decoders
+    if user_args.dec_config_sub1 is not None and user_args.dec_type != config.dec_config_sub1.dec_type:
+        user_args = parser.parse_known_args(input_args)[0]  # to avoid args conflict
+        parser = register_args_decoder(parser, user_args, config.dec_config_sub1.dec_type)
     user_args = parser.parse_args()
-    return user_args
+
+    # merge to omegaconf
+    for k, v in vars(user_args).items():
+        if k not in config:
+            config[k] = v
+
+    return config
 
 
 def parse_args_eval(input_args):
@@ -42,36 +60,38 @@ def parse_args_eval(input_args):
 
     # Load a yaml config file
     dir_name = os.path.dirname(user_args.recog_model[0])
-    conf_train = load_config(os.path.join(dir_name, 'conf.yml'))
+    config = load_config(os.path.join(dir_name, 'conf.yml'))
 
-    # register module specific arguments
-    user_args.enc_type = conf_train['enc_type']
-    parser = register_args_encoder(parser, user_args)
+    # register module specific arguments to support new args after training
+    # encoder
+    parser = register_args_encoder(parser, user_args, config.enc_type)
     user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
-    user_args.dec_type = conf_train['dec_type']  # to avoid overlap
-    parser = register_args_decoder(parser, user_args, user_args.dec_type)
-    if user_args.dec_n_layers_sub1 > 0 and user_args.dec_type != user_args.dec_type_sub1:
+    # decoder
+    if config.dec_config_sub1 is not None:
+        user_args.dec_config_sub1 = config.dec_config_sub1
+    parser = register_args_decoder(parser, user_args, config.dec_type)
+    if config.dec_config_sub1 is not None and config.dec_type != config.dec_config_sub1.dec_type:
         user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
-        parser = register_args_decoder(parser, user_args, user_args.dec_type_sub1)
+        parser = register_args_decoder(parser, user_args, config.dec_config_sub1.dec_type)
     user_args = parser.parse_args()
-    # NOTE: If new args are registered after training the model, the default value will be set
 
-    # Overwrite config
-    for k, v in conf_train.items():
-        if 'recog' not in k:
-            setattr(user_args, k, v)
+    # Overwrite to omegaconf
+    for k, v in vars(user_args).items():
+        if 'recog' in k or k not in config:
+            config[k] = v
+            logger.info('Overwrite configration: %s => %s' % (k, v))
 
-    return user_args, vars(user_args), dir_name
+    return config, dir_name
 
 
-def register_args_encoder(parser, args):
-    if args.enc_type == 'tds':
+def register_args_encoder(parser, args, enc_type):
+    if enc_type == 'tds':
         from neural_sp.models.seq2seq.encoders.tds import TDSEncoder as module
-    elif args.enc_type == 'gated_conv':
+    elif enc_type == 'gated_conv':
         from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder as module
-    elif 'transformer' in args.enc_type:
+    elif 'transformer' in enc_type:
         from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder as module
-    elif 'conformer' in args.enc_type:
+    elif 'conformer' in enc_type:
         from neural_sp.models.seq2seq.encoders.conformer import ConformerEncoder as module
     else:
         from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder as module

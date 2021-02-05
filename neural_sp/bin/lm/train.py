@@ -7,6 +7,7 @@
 """Train LM."""
 
 import cProfile
+from distutils.version import LooseVersion
 import logging
 import os
 from setproctitle import setproctitle
@@ -115,7 +116,7 @@ def main():
 
     if not args.resume:
         # Save conf file as a yaml file
-        save_config(vars(args), os.path.join(save_path, 'conf.yml'))
+        save_config(args, os.path.join(save_path, 'conf.yml'))
 
         # Save nlsyms, dictionary, and wp_model
         if args.nlsyms:
@@ -124,7 +125,7 @@ def main():
         if args.unit == 'wp':
             shutil.copy(args.wp_model, os.path.join(save_path, 'wp.model'))
 
-        for k, v in sorted(vars(args).items(), key=lambda x: x[0]):
+        for k, v in sorted(args.items(), key=lambda x: x[0]):
             logger.info('%s: %s' % (k, str(v)))
 
         # Count total parameters
@@ -154,7 +155,7 @@ def main():
                             early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
                             warmup_start_lr=args.warmup_start_lr,
                             warmup_n_steps=args.warmup_n_steps,
-                            model_size=getattr(args, 'transformer_d_model', 0),
+                            model_size=args.get('transformer_d_model', 0),
                             factor=args.lr_factor,
                             noam=args.optimizer == 'noam',
                             save_checkpoints_topk=10 if is_transformer else 1)

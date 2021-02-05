@@ -66,7 +66,6 @@ def main():
         for k, v in conf.items():
             if k != 'resume':
                 setattr(args, k, v)
-    recog_params = vars(args)
 
     args = compute_subsampling_factor(args)
 
@@ -142,7 +141,7 @@ def main():
 
     if not args.resume:
         # Save conf file as a yaml file
-        save_config(vars(args), os.path.join(save_path, 'conf.yml'))
+        save_config(args, os.path.join(save_path, 'conf.yml'))
         if args.external_lm:
             save_config(args.lm_conf, os.path.join(save_path, 'conf_lm.yml'))
 
@@ -150,12 +149,12 @@ def main():
         if args.nlsyms:
             shutil.copy(args.nlsyms, os.path.join(save_path, 'nlsyms.txt'))
         for sub in ['', '_sub1', '_sub2']:
-            if getattr(args, 'dict' + sub):
-                shutil.copy(getattr(args, 'dict' + sub), os.path.join(save_path, 'dict' + sub + '.txt'))
-            if getattr(args, 'unit' + sub) == 'wp':
-                shutil.copy(getattr(args, 'wp_model' + sub), os.path.join(save_path, 'wp' + sub + '.model'))
+            if args.get('dict' + sub):
+                shutil.copy(args.get('dict' + sub), os.path.join(save_path, 'dict' + sub + '.txt'))
+            if args.get('unit' + sub) == 'wp':
+                shutil.copy(args.get('wp_model' + sub), os.path.join(save_path, 'wp' + sub + '.model'))
 
-        for k, v in sorted(vars(args).items(), key=lambda x: x[0]):
+        for k, v in sorted(args.items(), key=lambda x: x[0]):
             logger.info('%s: %s' % (k, str(v)))
 
         # Count total parameters
@@ -204,10 +203,9 @@ def main():
                             lower_better=args.metric not in ['accuracy', 'bleu'],
                             warmup_start_lr=args.warmup_start_lr,
                             warmup_n_steps=args.warmup_n_steps,
-                            peak_lr=0.05 / (getattr(args, 'transformer_enc_d_model', 0) **
+                            peak_lr=0.05 / (args.get('transformer_enc_d_model', 0) **
                                             0.5) if 'conformer' in args.enc_type else 1e6,
-                            model_size=getattr(args, 'transformer_enc_d_model',
-                                               getattr(args, 'transformer_dec_d_model', 0)),
+                            model_size=args.get('transformer_enc_d_model', args.get('transformer_dec_d_model', 0)),
                             factor=args.lr_factor,
                             noam=args.optimizer == 'noam',
                             save_checkpoints_topk=10 if is_transformer else 1)
@@ -298,17 +296,17 @@ def main():
         if args.mbr_ce_weight > 0:
             tasks = ['ys.mbr'] + tasks
         for sub in ['sub1', 'sub2']:
-            if getattr(args, 'train_set_' + sub):
-                if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) > 0:
+            if args.get('train_set_' + sub) is not None:
+                if args.get(sub + '_weight', 0) - args.get('ctc_weight_' + sub, 0) > 0:
                     tasks = ['ys_' + sub] + tasks
-                if getattr(args, 'ctc_weight_' + sub) > 0:
+                if args.get('ctc_weight_' + sub, 0) > 0:
                     tasks = ['ys_' + sub + '.ctc'] + tasks
     else:
         tasks = ['all']
 
-    if getattr(args, 'ss_start_epoch', 0) <= resume_epoch:
+    if args.get('ss_start_epoch', 0) <= resume_epoch:
         model.module.trigger_scheduled_sampling()
-    if getattr(args, 'mocha_quantity_loss_start_epoch', 0) <= resume_epoch:
+    if args.get('mocha_quantity_loss_start_epoch', 0) <= resume_epoch:
         model.module.trigger_quantity_loss()
 
     start_time_train = time.time()
@@ -409,8 +407,7 @@ def main():
                 if int(train_set.epoch_detail * 10) != int(epoch_detail_prev * 10):
                     sub_epoch = int(train_set.epoch_detail * 10) / 10
                     # dev
-                    metric_dev = evaluate([model.module], dev_set, recog_params, args,
-                                          sub_epoch, logger)
+                    metric_dev = evaluate([model.module], dev_set, args, sub_epoch, logger)
                     reporter.epoch(metric_dev, name=args.metric)  # plot
                     # Save model
                     scheduler.save_checkpoint(
@@ -418,8 +415,7 @@ def main():
                         epoch_detail=sub_epoch)
                     # test
                     for eval_set in eval_sets:
-                        evaluate([model.module], eval_set, recog_params, args,
-                                 sub_epoch, logger)
+                        evaluate([model.module], eval_set, args, sub_epoch, logger)
                 epoch_detail_prev = train_set.epoch_detail
 
             if is_new_epoch:
@@ -440,8 +436,7 @@ def main():
         else:
             start_time_eval = time.time()
             # dev
-            metric_dev = evaluate([model.module], dev_set, recog_params, args,
-                                  scheduler.n_epochs + 1, logger)
+            metric_dev = evaluate([model.module], dev_set, args, scheduler.n_epochs + 1, logger)
             scheduler.epoch(metric_dev)  # lr decay
             reporter.epoch(metric_dev, name=args.metric)  # plot
 
@@ -453,8 +448,7 @@ def main():
                 # test
                 if scheduler.is_topk:
                     for eval_set in eval_sets:
-                        evaluate([model.module], eval_set, recog_params, args,
-                                 scheduler.n_epochs, logger)
+                        evaluate([model.module], eval_set, args, scheduler.n_epochs, logger)
 
             duration_eval = time.time() - start_time_eval
             logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
@@ -470,9 +464,9 @@ def main():
 
         if scheduler.n_epochs >= args.n_epochs:
             break
-        if getattr(args, 'ss_start_epoch', 0) == (ep + 1):
+        if args.get('ss_start_epoch', 0) == (ep + 1):
             model.module.trigger_scheduled_sampling()
-        if getattr(args, 'mocha_quantity_loss_start_epoch', 0) == (ep + 1):
+        if args.get('mocha_quantity_loss_start_epoch', 0) == (ep + 1):
             model.module.trigger_quantity_loss()
 
         start_time_step = time.time()
@@ -487,20 +481,20 @@ def main():
     return save_path
 
 
-def evaluate(models, dataloader, recog_params, args, epoch, logger):
+def evaluate(models, dataloader, args, epoch, logger):
 
     if args.metric == 'edit_distance':
         if args.unit in ['word', 'word_char']:
-            metric = eval_word(models, dataloader, recog_params, epoch=epoch)[0]
+            metric = eval_word(models, dataloader, args, epoch=epoch)[0]
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
 
         elif args.unit == 'wp':
-            metric, cer = eval_wordpiece(models, dataloader, recog_params, epoch=epoch)
+            metric, cer = eval_wordpiece(models, dataloader, args, epoch=epoch)
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
             logger.info('CER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, cer))
 
         elif 'char' in args.unit:
-            wer, cer = eval_char(models, dataloader, recog_params, epoch=epoch)
+            wer, cer = eval_char(models, dataloader, args, epoch=epoch)
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, wer))
             logger.info('CER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, cer))
             if dataloader.corpus in ['aishell1']:
@@ -509,7 +503,7 @@ def evaluate(models, dataloader, recog_params, args, epoch, logger):
                 metric = wer
 
         elif 'phone' in args.unit:
-            metric = eval_phone(models, dataloader, recog_params, epoch=epoch)
+            metric = eval_phone(models, dataloader, args, epoch=epoch)
             logger.info('PER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'ppl':
@@ -525,7 +519,7 @@ def evaluate(models, dataloader, recog_params, args, epoch, logger):
         logger.info('Accuracy (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'bleu':
-        metric = eval_wordpiece_bleu(models, dataloader, recog_params, epoch=epoch)
+        metric = eval_wordpiece_bleu(models, dataloader, args, epoch=epoch)
         logger.info('BLEU (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     else:

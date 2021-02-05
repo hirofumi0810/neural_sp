@@ -109,11 +109,11 @@ def set_asr_model_name(args):
         if args.bwd_weight > 0:
             dir_name += '_' + args.unit + 'bwd'
         for sub in ['sub1', 'sub2']:
-            if getattr(args, 'train_set_' + sub):
-                dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
-                if getattr(args, 'ctc_weight_' + sub) > 0:
+            if args.get('train_set_' + sub) is not None:
+                dir_name += '_' + args.get('unit_' + sub) + str(args.get('vocab_' + sub))
+                if args.get('ctc_weight_' + sub, 0) > 0:
                     dir_name += 'ctc'
-                if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) > 0:
+                if args.get(sub + '_weight', 0) - args.get('ctc_weight_' + sub, 0) > 0:
                     dir_name += 'fwd'
     else:
         if args.ctc_weight > 0:
@@ -121,12 +121,13 @@ def set_asr_model_name(args):
         if args.bwd_weight > 0:
             dir_name += '_bwd' + str(args.bwd_weight)
         for sub in ['sub1', 'sub2']:
-            if getattr(args, sub + '_weight') > 0:
-                dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
-                if getattr(args, 'ctc_weight_' + sub) > 0:
-                    dir_name += 'ctc%.1f' % getattr(args, 'ctc_weight_' + sub)
-                if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) > 0:
-                    dir_name += 'fwd%.2f' % (1.0 - getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub))
+            if args.get(sub + '_weight', 0) > 0:
+                dir_name += '_' + args.get('unit_' + sub) + str(args.get('vocab_' + sub))
+                if args.get('ctc_weight_' + sub, 0) > 0:
+                    dir_name += 'ctc%.1f' % args.get('ctc_weight_' + sub)
+                if args.get(sub + '_weight', 0) - args.get('ctc_weight_' + sub, 0) > 0:
+                    dir_name += 'fwd%.2f' % (args.total_weight - args.get(sub + '_weight',
+                                                                          0) - args.get('ctc_weight_' + sub, 0))
     if args.task_specific_layer:
         dir_name += '_tsl'
 
@@ -196,7 +197,7 @@ def set_lm_name(args):
 
     # regularization
     dir_name += '_dropI' + str(args.dropout_in) + 'H' + str(args.dropout_hidden)
-    if getattr(args, 'dropout_layer', 0) > 0:
+    if args.get('dropout_layer', 0) > 0:
         dir_name += 'Layer' + str(args.dropout_layer)
     if args.lsm_prob > 0:
         dir_name += '_ls' + str(args.lsm_prob)

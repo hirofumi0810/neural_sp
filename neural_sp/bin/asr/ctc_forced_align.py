@@ -4,7 +4,7 @@
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Conduct forced alignment with the pre-trained CTC model."""
+"""Conduct forced alignment with pre-trained CTC model."""
 
 import codecs
 import logging
@@ -30,8 +30,7 @@ logger = logging.getLogger(__name__)
 def main():
 
     # Load configuration
-    args, recog_params, dir_name = parse_args_eval(sys.argv[1:])
-    args = compute_subsampling_factor(args)
+    args, dir_name = parse_args_eval(sys.argv[1:])
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'align.log')):
@@ -46,10 +45,10 @@ def main():
         # Load dataloader
         dataloader = build_dataloader(args=args,
                                       tsv_path=s,
-                                      batch_size=recog_params['recog_batch_size'])
+                                      batch_size=args.recog_batch_size)
 
         if i == 0:
-            # Load the ASR model
+            # Load ASR model
             model = Speech2Text(args, dir_name)
             epoch = int(args.recog_model[0].split('-')[-1])
             if args.recog_n_average > 1:

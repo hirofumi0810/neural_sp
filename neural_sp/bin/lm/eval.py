@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 def main():
 
     # Load configuration
-    args, _, dir_name = parse_args_eval(sys.argv[1:])
+    args, dir_name = parse_args_eval(sys.argv[1:])
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):

@@ -16,7 +16,6 @@ import time
 from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.train_utils import (
-    compute_subsampling_factor,
     load_checkpoint,
     load_config,
     set_logger
@@ -38,8 +37,7 @@ logger = logging.getLogger(__name__)
 def main():
 
     # Load configuration
-    args, recog_params, dir_name = parse_args_eval(sys.argv[1:])
-    args = compute_subsampling_factor(args)
+    args, dir_name = parse_args_eval(sys.argv[1:])
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):
@@ -165,7 +163,7 @@ def main():
 
         if args.recog_metric == 'edit_distance':
             if args.recog_unit in ['word', 'word_char']:
-                wer, cer, _ = eval_word(ensemble_models, dataloader, recog_params,
+                wer, cer, _ = eval_word(ensemble_models, dataloader, args,
                                         epoch=epoch - 1,
                                         recog_dir=args.recog_dir,
                                         progressbar=True,
@@ -174,7 +172,7 @@ def main():
                 wer_avg += wer
                 cer_avg += cer
             elif args.recog_unit == 'wp':
-                wer, cer = eval_wordpiece(ensemble_models, dataloader, recog_params,
+                wer, cer = eval_wordpiece(ensemble_models, dataloader, args,
                                           epoch=epoch - 1,
                                           recog_dir=args.recog_dir,
                                           streaming=args.recog_streaming,
@@ -184,7 +182,7 @@ def main():
                 wer_avg += wer
                 cer_avg += cer
             elif 'char' in args.recog_unit:
-                wer, cer = eval_char(ensemble_models, dataloader, recog_params,
+                wer, cer = eval_char(ensemble_models, dataloader, args,
                                      epoch=epoch - 1,
                                      recog_dir=args.recog_dir,
                                      progressbar=True,
@@ -195,7 +193,7 @@ def main():
                 wer_avg += wer
                 cer_avg += cer
             elif 'phone' in args.recog_unit:
-                per = eval_phone(ensemble_models, dataloader, recog_params,
+                per = eval_phone(ensemble_models, dataloader, args,
                                  epoch=epoch - 1,
                                  recog_dir=args.recog_dir,
                                  progressbar=True,
@@ -211,7 +209,7 @@ def main():
         elif args.recog_metric == 'accuracy':
             acc_avg += eval_accuracy(ensemble_models, dataloader, progressbar=True)
         elif args.recog_metric == 'bleu':
-            bleu = eval_wordpiece_bleu(ensemble_models, dataloader, recog_params,
+            bleu = eval_wordpiece_bleu(ensemble_models, dataloader, args,
                                        epoch=epoch - 1,
                                        recog_dir=args.recog_dir,
                                        streaming=args.recog_streaming,
