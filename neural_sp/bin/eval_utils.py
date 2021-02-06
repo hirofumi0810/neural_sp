@@ -23,11 +23,12 @@ def average_checkpoints(model, best_model_path, n_average, topk_list=[]):
     checkpoint_avg = {'model_state_dict': None}
     if len(topk_list) == 0:
         epoch = int(float(best_model_path.split('model.epoch-')[1]) * 10) / 10
+        score = None
         if epoch >= 1:
             epoch = int(epoch)
-            topk_list = [(i, 0) for i in range(epoch, epoch - n_average - 1, -1)]
+            topk_list = [(i, score) for i in range(epoch, max(0, epoch - n_average - 1), -1)]
         else:
-            topk_list = [(epoch, 0)]
+            topk_list = [(epoch, score)]
     for ep, _ in topk_list:
         if n_models == n_average:
             break

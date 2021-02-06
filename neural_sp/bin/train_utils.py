@@ -3,14 +3,13 @@
 
 """Utility functions for training."""
 
-import codecs
 import functools
 import logging
 import numpy as np
+from omegaconf import OmegaConf
 import os
 import time
 import torch
-import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +18,9 @@ def compute_subsampling_factor(args):
     """Register subsample factors to args.
 
         Args:
-            args (Namespace):
+            args (omegaconf.dictconfig.DictConfig): configuration
         Returns:
-            args (Namespace):
+            args (omegaconf.dictconfig.DictConfig): configuration
 
     """
     if args.resume:
@@ -59,30 +58,32 @@ def load_config(config_path):
     """Load a configuration yaml file.
 
     Args:
-        config_path (str):
+        config_path (str): path to the configuration file
     Returns:
-        params (dict):
+        config (omegaconf.dictconfig.DictConfig): configuration
 
     """
     if not os.path.isfile(config_path):
         raise ValueError("No configuration found at %s" % config_path)
 
-    with codecs.open(config_path, "r", encoding='utf-8') as f:
-        conf = yaml.load(f, Loader=yaml.FullLoader)
+    config = OmegaConf.load(config_path)
 
-    params = conf['param']
-    return params
+    if 'param' in config:  # for compatibility
+        config = config['param']
+        OmegaConf.save(config, config_path)  # overwrite
+
+    return config
 
 
-def save_config(conf, save_path):
+def save_config(config, save_path):
     """Save a configuration file as a yaml file.
 
     Args:
-        conf (dict):
+        config (omegaconf.dictconfig.DictConfig): configuration
+        save_path (str): path to the configuration file
 
     """
-    with codecs.open(os.path.join(save_path), "w", encoding='utf-8') as f:
-        f.write(yaml.dump({'param': conf}, default_flow_style=False))
+    OmegaConf.save(config, save_path)
 
 
 def set_logger(save_path, stdout=False):
