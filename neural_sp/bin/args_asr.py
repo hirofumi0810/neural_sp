@@ -240,9 +240,17 @@ def build_parser():
                         help='decoder configuration in the 2nd auxiliary task')
     parser.add_argument('--dec_n_layers', type=int, default=1,
                         help='number of decoder RNN layers')
+    parser.add_argument('--dec_n_layers_sub1', type=int, default=0,
+                        help='number of decoder RNN layers in the 1st auxiliary task')
+    parser.add_argument('--dec_n_layers_sub2', type=int, default=0,
+                        help='number of decoder RNN layers in the 2nd auxiliary task')
     parser.add_argument('--tie_embedding', type=strtobool, default=False, nargs='?',
                         help='tie weights of an embedding matrix and a linear layer before the softmax layer')
     parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
+                        help='')
+    parser.add_argument('--ctc_fc_list_sub1', type=str, default="", nargs='?',
+                        help='')
+    parser.add_argument('--ctc_fc_list_sub2', type=str, default="", nargs='?',
                         help='')
     # optimization
     parser.add_argument('--batch_size', type=int, default=50,
