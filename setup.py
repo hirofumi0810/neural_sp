@@ -24,6 +24,7 @@ requirements = {
         'setproctitle>=1.1.10',
         'tensorboardX>=2.0',
         'tqdm>=4.42.0',
+        'omegaconf>=2.0.6',
     ],
     'setup': [
 
