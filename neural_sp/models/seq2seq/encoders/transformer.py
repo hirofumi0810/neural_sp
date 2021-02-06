@@ -362,10 +362,11 @@ class TransformerEncoder(EncoderBase):
             dir_name += '_clamp' + str(args.transformer_enc_clamp_len)
         if args.dropout_enc_layer > 0:
             dir_name += '_LD' + str(args.dropout_enc_layer)
-        if int(args.lc_chunk_size_left.split('_')[-1]) > 0 or int(args.lc_chunk_size_current.split('_')[-1]) > 0 \
-                or int(args.lc_chunk_size_right.split('_')[-1]) > 0:
-            dir_name += '_chunkL' + args.lc_chunk_size_left + 'C' + \
-                args.lc_chunk_size_current + 'R' + args.lc_chunk_size_right
+        if int(str(args.lc_chunk_size_left).split('_')[-1]) > 0 or \
+                int(str(args.lc_chunk_size_current).split('_')[-1]) > 0 or \
+                int(str(args.lc_chunk_size_right).split('_')[-1]) > 0:
+            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
+                str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
             dir_name += '_' + args.lc_type
         elif sum(list(map(int, args.transformer_enc_lookaheads.split('_')))) > 0:
             dir_name += '_LA' + str(sum(list(map(int, args.transformer_enc_lookaheads.split('_')))))

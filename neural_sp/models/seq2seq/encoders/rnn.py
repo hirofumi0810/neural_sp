@@ -271,8 +271,10 @@ class RNNEncoder(EncoderBase):
         dir_name += str(args.enc_n_layers) + 'L'
         if args.bidirectional_sum_fwd_bwd:
             dir_name += '_sumfwdbwd'
-        if int(args.lc_chunk_size_left.split('_')[0]) > 0 or int(args.lc_chunk_size_right.split('_')[0]) > 0:
-            dir_name += '_chunkL' + args.lc_chunk_size_left + 'R' + args.lc_chunk_size_right
+        if int(str(args.lc_chunk_size_left).split('_')[0]) > 0 or \
+                int(str(args.lc_chunk_size_right).split('_')[0]) > 0:
+            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + \
+                str(args.lc_chunk_size_right)
             if not args.cnn_lookahead:
                 dir_name += '_blockwise'
         if args.rsp_prob_enc > 0:
