@@ -31,7 +31,8 @@ dec_bottleneck_dim: 1024  ### this is effective
 emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
-ctc_fc_list_sub1: ""
+dec_config_sub1:
+  ctc_fc_list: ""
 ### optimization
 batch_size: 30
 optimizer: adam

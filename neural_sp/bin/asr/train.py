@@ -193,7 +193,7 @@ def main():
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
     # Wrap optimizer by learning rate scheduler
-    is_transformer = 'former' in args.enc_type or 'former' in args.dec_type
+    is_transformer = 'former' in args.enc_type or 'former' in args.dec_type or 'former' in args.dec_type_sub1
     scheduler = LRScheduler(optimizer, args.lr,
                             decay_type=args.lr_decay_type,
                             decay_start_epoch=args.lr_decay_start_epoch,
