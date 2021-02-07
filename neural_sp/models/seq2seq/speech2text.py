@@ -69,7 +69,7 @@ class Speech2Text(ModelBase):
         # NOTE: reserved in advance
 
         # for the sub tasks
-        self.main_weight = 1.0 - args.sub1_weight - args.sub2_weight
+        self.main_weight = args.total_weight - args.sub1_weight - args.sub2_weight
         self.sub1_weight = args.sub1_weight
         self.sub2_weight = args.sub2_weight
         self.mtl_per_batch = args.mtl_per_batch
@@ -128,6 +128,8 @@ class Speech2Text(ModelBase):
         self.enc = build_encoder(args)
         if args.freeze_encoder:
             for n, p in self.enc.named_parameters():
+                if 'bridge' in n or 'sub1' in n:
+                    continue
                 p.requires_grad = False
                 logger.info('freeze %s' % n)
 
@@ -160,7 +162,6 @@ class Speech2Text(ModelBase):
                                 self.enc.output_dim,
                                 args.vocab,
                                 self.ctc_weight,
-                                args.ctc_fc_list,
                                 self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                                 external_lm)
             setattr(self, 'dec_' + dir, dec)
@@ -168,11 +169,15 @@ class Speech2Text(ModelBase):
         # sub task
         for sub in ['sub1', 'sub2']:
             if getattr(self, sub + '_weight') > 0:
-                dec_sub = build_decoder(args, special_symbols,
-                                        self.enc.output_dim,
+                args_sub = copy.deepcopy(args)
+                if hasattr(args, 'dec_config_' + sub):
+                    for k, v in getattr(args, 'dec_config_' + sub).items():
+                        setattr(args_sub, k, v)
+                # NOTE: Other parameters are the same as the main decoder
+                dec_sub = build_decoder(args_sub, special_symbols,
+                                        getattr(self.enc, 'output_dim_' + sub),
                                         getattr(self, 'vocab_' + sub),
                                         getattr(self, 'ctc_weight_' + sub),
-                                        getattr(args, 'ctc_fc_list_' + sub),
                                         getattr(self, sub + '_weight'),
                                         external_lm)
                 setattr(self, 'dec_fwd_' + sub, dec_sub)
@@ -320,7 +325,7 @@ class Speech2Text(ModelBase):
             if (getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0) and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc']:
                 if len(batch['ys_' + sub]) == 0:
                     continue
-                # NOTE: this is for evaluation at the end of every opoch
+                # NOTE: this is for evaluation at the end of every epoch
 
                 loss_sub, obs_fwd_sub = getattr(self, 'dec_fwd_' + sub)(
                     eout_dict['ys_' + sub]['xs'], eout_dict['ys_' + sub]['xlens'],
