@@ -441,7 +441,6 @@ class RNNTransducer(DecoderBase):
         lm_weight = params.get('recog_lm_weight')
         lm_weight_second = params.get('recog_lm_second_weight')
         lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
-        # asr_state_CO = params.get('recog_asr_state_carry_over')
         lm_state_CO = params.get('recog_lm_state_carry_over')
         softmax_smoothing = params.get('recog_softmax_smoothing')
         merge_prob = True  # TODO: make this parameter
@@ -598,5 +597,9 @@ class RNNTransducer(DecoderBase):
 
             # N-best list
             nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
+
+        # Store ASR/LM state
+        self.dstates_final = end_hyps[0]['dstate']
+        self.lmstate_final = end_hyps[0]['lmstate']
 
         return nbest_hyps_idx, None, None
