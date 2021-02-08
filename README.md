@@ -149,9 +149,11 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### TEDLIUM2 (WER)
 | Model          | dev   | test |
 | -------------- | ----  | ---- |
-| BLSTM LAS      |  8.6  | 8.1  |
-| LC-BLSTM MoChA | 10.6  | 8.6  |
-| LC-BLSTM RNN-T |  9.0  | 8.6  |
+| BLSTM LAS      |  8.1  |  7.5 |
+| LC-BLSTM RNN-T |  8.9  |  8.5 |
+| LC-BLSTM MoChA | 10.6  |  8.6 |
+| UniLSTM RNN-T  | 11.6  | 11.7 |
+| UniLSTM MoChA  | 13.6  | 11.6 |
 
 ### WSJ (WER)
 | Model     | test_dev93 | test_eval92 |
