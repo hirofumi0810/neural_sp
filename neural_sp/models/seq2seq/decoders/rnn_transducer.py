@@ -447,6 +447,8 @@ class RNNTransducer(DecoderBase):
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)
+        if lm is not None:
+            assert isinstance(lm, RNNLM)
         lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second, cache_emb)
         lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd, cache_emb)
 
@@ -460,11 +462,12 @@ class RNNTransducer(DecoderBase):
             y = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(self.eos)
             y_emb = self.dropout_emb(self.embed(y))
             dout, dstate = self.recurrency(y_emb, None)
-            lmstate = None
+            lmstate = {'hxs': dout.new_zeros(lm.n_layers, 1, lm.n_units),
+                       'cxs': dout.new_zeros(lm.n_layers, 1, lm.n_units)} if lm is not None else None
 
             if speakers is not None:
                 if speakers[b] == self.prev_spk:
-                    if lm_state_CO and isinstance(lm, RNNLM):
+                    if lm_state_CO:
                         lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
 
@@ -479,13 +482,13 @@ class RNNTransducer(DecoderBase):
                      'dstate': dstate,
                      'lmstate': lmstate}]
             for t in range(elens[b]):
-                # batchfy all hypotheses for batch decoding
+                # batchfy all hypotheses for joint network
                 douts = torch.cat([beam['dout'] for beam in hyps], dim=0)
                 logits = self.joint(eouts[b:b + 1, t:t + 1].repeat([douts.size(0), 1, 1]), douts)
                 logits = logits * softmax_smoothing
                 scores_rnnt = torch.log_softmax(logits.squeeze(2).squeeze(1), dim=-1)  # `[B, vocab]`
 
-                new_hyps = []
+                new_hyps, batch_hyps = [], []
                 for j, beam in enumerate(hyps):
                     # Transducer scores
                     total_scores_rnnt = beam['score_rnnt'] + scores_rnnt[j:j + 1]
@@ -495,7 +498,6 @@ class RNNTransducer(DecoderBase):
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
                         total_score = total_scores_topk[0, k].item()
-                        total_score_lm = beam['score_lm']
 
                         if idx == self.blank:
                             new_hyps.append(beam.copy())
@@ -512,40 +514,60 @@ class RNNTransducer(DecoderBase):
                             dstate = self.state_cache[hyp_ids_str]['dstate']
                             lmstate = self.state_cache[hyp_ids_str]['lmstate']
                             total_score_lm = self.state_cache[hyp_ids_str]['total_score_lm']
-                        else:
-                            y = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(idx)
-                            if self.embed_cache is not None:
-                                y_emb = self.embed_cache[y]
-                            else:
-                                y_emb = self.dropout_emb(self.embed(y))
-                            dout, dstate = self.recurrency(y_emb, beam['dstate'])
-
-                            # Update LM states for shallow fusion
-                            y_prev = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(beam['hyp'][-1])
-                            _, lmstate, scores_lm = helper.update_rnnlm_state(lm, beam, y_prev)
-                            if lm is not None:
-                                total_score_lm += scores_lm[0, -1, idx].item()
-
-                            self.state_cache[hyp_ids_str] = {
-                                'dout': dout,
-                                'dstate': dstate,
-                                'lmstate': {'hxs': lmstate['hxs'],
-                                            'cxs': lmstate['cxs']} if lmstate is not None else None,
-                                'total_score_lm': total_score_lm,
-                            }
-
-                        if lm is not None:
                             total_score += total_score_lm * lm_weight
 
-                        new_hyps.append({'hyp': hyp_ids,
-                                         'hyp_ids_str': hyp_ids_str,
-                                         'score': total_score,
-                                         'score_rnnt': total_scores_rnnt[0, idx].item(),
-                                         'score_lm': total_score_lm,
-                                         'dout': dout,
-                                         'dstate': dstate,
-                                         'lmstate': {'hxs': lmstate['hxs'],
-                                                     'cxs': lmstate['cxs']} if lmstate is not None else None})
+                            new_hyps.append({'hyp': hyp_ids,
+                                             'hyp_ids_str': hyp_ids_str,
+                                             'score': total_score,
+                                             'score_rnnt': total_scores_rnnt[0, idx].item(),
+                                             'score_lm': total_score_lm,
+                                             'dout': dout,
+                                             'dstate': dstate,
+                                             'lmstate': lmstate})
+                        else:
+                            # prediction network and LM will be updated later
+                            batch_hyps.append(beam.copy())
+                            batch_hyps[-1]['hyp'] = hyp_ids
+                            batch_hyps[-1]['hyp_ids_str'] = hyp_ids_str
+                            batch_hyps[-1]['score'] = total_score
+                            batch_hyps[-1]['score_rnnt'] = total_scores_rnnt[0, idx].item()
+
+                # bachfy all hypotheses (not in the cache, non-blank) for updating prediction network
+                if len(batch_hyps) > 0:
+                    ys = y.new_zeros((len(batch_hyps), 1))
+                    ys_prev = y.new_zeros((len(batch_hyps), 1))
+                    for i, beam in enumerate(batch_hyps):
+                        ys[i] = beam['hyp'][-1]
+                        ys_prev[i] = beam['hyp'][-2]
+                    dstates_prev = {'hxs': torch.cat([beam['dstate']['hxs'] for beam in batch_hyps], dim=1),
+                                    'cxs': torch.cat([beam['dstate']['cxs'] for beam in batch_hyps], dim=1)}
+                    ys_emb = self.dropout_emb(self.embed(ys)) if self.embed_cache is None else self.embed_cache[ys]
+                    douts, dstates = self.recurrency(ys_emb, dstates_prev)
+                    # Update LM states for shallow fusion
+                    _, lmstates, scores_lm = helper.update_rnnlm_state_batch(lm, batch_hyps, ys_prev)
+
+                    for i, beam in enumerate(batch_hyps):
+                        if lm is not None:
+                            beam['score_lm'] += scores_lm[i, -1, beam['hyp'][-1]].item()
+                            beam['score'] += beam['score_lm'] * lm_weight
+                        dout = douts[i:i + 1]
+                        dstate = {'hxs': dstates['hxs'][:, i:i + 1],
+                                  'cxs': dstates['cxs'][:, i:i + 1]}
+                        lmstate = {'hxs': lmstates['hxs'][:, i:i + 1],
+                                   'cxs': lmstates['cxs'][:, i:i + 1]} if lmstates is not None else None
+
+                        # register to cache
+                        self.state_cache[beam['hyp_ids_str']] = {
+                            'dout': dout,
+                            'dstate': dstate,
+                            'lmstate': lmstate,
+                            'total_score_lm': beam['score_lm'],
+                        }
+
+                        beam['dout'] = dout
+                        beam['dstate'] = dstate
+                        beam['lmstate'] = lmstate
+                        new_hyps.append(beam)
 
                 # Local pruning
                 new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)
@@ -582,6 +604,8 @@ class RNNTransducer(DecoderBase):
                     if refs_id is not None:
                         logger.info('Ref: %s' % idx2token(refs_id[b]))
                     logger.info('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:]))
+                    if len(end_hyps[k]['hyp']) > 1:
+                        logger.info('num tokens (hyp): %d' % len(end_hyps[k]['hyp'][1:]))
                     logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
                     logger.info('log prob (hyp, rnnt): %.7f' % end_hyps[k]['score_rnnt'])
                     if lm is not None:
