@@ -400,6 +400,20 @@ class RNNTransducer(DecoderBase):
             indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
             self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
 
+    def initialize_beam(self, hyp, dstate, lmstate):
+        """Initialize beam."""
+        hyps = [{'hyp': hyp,
+                 'hyp_ids_str': '',
+                 'score': 0.,
+                 'score_rnnt': 0.,
+                 'score_lm': 0.,
+                 'dout': None,
+                 'dstate': dstate,
+                 'lmstate': lmstate,
+                 'path_len': 0,
+                 'update_pred_net': True}]
+        return hyps
+
     def beam_search(self, eouts, elens, params, idx2token=None,
                     lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
@@ -471,16 +485,7 @@ class RNNTransducer(DecoderBase):
                 self.prev_spk = speakers[b]
 
             end_hyps = []
-            hyps = [{'hyp': [self.eos],
-                     'hyp_ids_str': '',
-                     'ys': [self.eos],
-                     'score': 0.,
-                     'score_rnnt': 0.,
-                     'score_lm': 0.,
-                     'dout': None,
-                     'dstate': dstate,
-                     'lmstate': lmstate,
-                     'update_pred_net': True}]
+            hyps = self.initialize_beam([self.eos], dstate, lmstate)
 
             if beam_search_type == 'time_sync_simple':
                 hyps, new_hyps_sorted = self._beam_search_time_sync_simple(
