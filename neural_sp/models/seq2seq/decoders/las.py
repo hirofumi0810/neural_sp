@@ -1015,6 +1015,7 @@ class RNNDecoder(DecoderBase):
 
     def initialize_beam(self, hyp, dstates, cv, lmstate, ctc_state,
                         ensmbl_decs=[]):
+        """Initialize beam."""
         # Ensemble initialization
         ensmbl_dstate, ensmbl_cv = [], []
         for dec in ensmbl_decs:
@@ -1443,6 +1444,8 @@ class RNNDecoder(DecoderBase):
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, lm_weight, eouts.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)
+        if lm is not None:
+            assert isinstance(lm, RNNLM)
 
         # cache token embeddings
         if cache_emb:
@@ -1472,8 +1475,7 @@ class RNNDecoder(DecoderBase):
 
             if state_carry_over:
                 dstates = self.dstates_final
-                if isinstance(lm, RNNLM):
-                    lmstate = self.lmstate_final
+                lmstate = self.lmstate_final
 
             self.n_frames = 0
             self.chunk_size = eouts.size(1)
@@ -1518,10 +1520,7 @@ class RNNDecoder(DecoderBase):
             lmout, lmstate, scores_lm = helper.update_rnnlm_state_batch(
                 self.lm if self.lm is not None else lm, hyps, y)
 
-            if self.embed_cache is not None:
-                y_emb = self.embed_cache[y]
-            else:
-                y_emb = self.dropout_emb(self.embed(y))
+            y_emb = self.dropout_emb(self.embed(y)) if self.embed_cache is None else self.embed_cache[y]
             dstates, cv, aw, _, attn_v = self.decode_step(
                 eouts[0:1], dstates, cv, y_emb, None, aw, lmout, streaming=True)
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)
@@ -1584,7 +1583,8 @@ class RNNDecoder(DecoderBase):
                          'score_att': total_scores_att[0, idx].item(),
                          'score_ctc': total_scores_ctc[k].item(),
                          'score_lm': total_scores_lm[k].item(),
-                         'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1], dstates['dstate'][1][:, j:j + 1])},
+                         'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1],
+                                                dstates['dstate'][1][:, j:j + 1])},
                          'cv': cv[j:j + 1],
                          'aws': beam['aws'] + [aw[j:j + 1]],
                          'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1],
