@@ -459,11 +459,10 @@ class RNNTransducer(DecoderBase):
         nbest_hyps_idx = []
         for b in range(bs):
             # Initialization per utterance
-            y = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(self.eos)
-            y_emb = self.dropout_emb(self.embed(y))
-            dout, dstate = self.recurrency(y_emb, None)
-            lmstate = {'hxs': dout.new_zeros(lm.n_layers, 1, lm.n_units),
-                       'cxs': dout.new_zeros(lm.n_layers, 1, lm.n_units)} if lm is not None else None
+            dstate = {'hxs': eouts.new_zeros(self.n_layers, 1, self.dec_n_units),
+                      'cxs': eouts.new_zeros(self.n_layers, 1, self.dec_n_units)}
+            lmstate = {'hxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units),
+                       'cxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units)} if lm is not None else None
 
             if speakers is not None:
                 if speakers[b] == self.prev_spk:
@@ -478,17 +477,16 @@ class RNNTransducer(DecoderBase):
                      'score': 0.,
                      'score_rnnt': 0.,
                      'score_lm': 0.,
-                     'dout': dout,
+                     'dout': None,
                      'dstate': dstate,
-                     'lmstate': lmstate}]
+                     'lmstate': lmstate,
+                     'update_pred_net': True}]
+
             if beam_search_type == 'simple':
                 hyps, new_hyps_sorted = self._beam_search_simple(
-                    hyps, helper, eouts[b:b + 1], elens[b], softmax_smoothing,
-                    lm)
+                    hyps, helper, eouts[b:b + 1], elens[b], softmax_smoothing, lm)
             elif beam_search_type == 'time_sync':
-                hyps, new_hyps_sorted = self._beam_search_time_sync(
-                    hyps, helper, eouts[b:b + 1], elens[b], softmax_smoothing,
-                    lm)
+                raise NotImplementedError
             else:
                 raise NotImplementedError(beam_search_type)
 
