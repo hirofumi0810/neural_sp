@@ -482,8 +482,8 @@ class RNNTransducer(DecoderBase):
                      'lmstate': lmstate,
                      'update_pred_net': True}]
 
-            if beam_search_type == 'simple':
-                hyps, new_hyps_sorted = self._beam_search_simple(
+            if beam_search_type == 'time_sync_simple':
+                hyps, new_hyps_sorted = self._beam_search_time_sync_simple(
                     hyps, helper, eouts[b:b + 1], elens[b], softmax_smoothing, lm)
             elif beam_search_type == 'time_sync':
                 raise NotImplementedError
@@ -539,7 +539,7 @@ class RNNTransducer(DecoderBase):
 
         return nbest_hyps_idx, None, None
 
-    def _beam_search_simple(self, hyps, helper, eout, elen, softmax_smoothing, lm):
+    def _beam_search_time_sync_simple(self, hyps, helper, eout, elen, softmax_smoothing, lm):
         beam_width = helper.beam_width
         lm_weight = helper.lm_weight
         merge_prob = True

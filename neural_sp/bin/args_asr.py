@@ -495,7 +495,7 @@ def build_parser():
                         help='delay threshold for MMA decoder')
     parser.add_argument('--recog_mem_len', type=int, default=0,
                         help='number of tokens for memory in TransformerXL decoder during evaluation')
-    parser.add_argument('--recog_rnnt_beam_search_type', type=str, default='simple',
-                        choices=['simple', 'time_sync'],
+    parser.add_argument('--recog_rnnt_beam_search_type', type=str, default='time_sync_simple',
+                        choices=['time_sync_simple', 'time_sync'],
                         help='beam search type for RNN-T')
     return parser

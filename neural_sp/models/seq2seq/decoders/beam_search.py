@@ -4,7 +4,6 @@
 """Utility functions for beam search decoding."""
 
 import logging
-import math
 import numpy as np
 import torch
 
@@ -114,8 +113,7 @@ class BeamSearch(object):
         return lmout, lmstate, scores_lm
 
     @staticmethod
-    def lm_rescoring(hyps, lm, lm_weight, reverse=False, normalize=False,
-                     tag=''):
+    def lm_rescoring(hyps, lm, lm_weight, reverse=False, normalize=False, tag=''):
         if lm is None:
             return
         for i in range(len(hyps)):
@@ -166,7 +164,7 @@ class BeamSearch(object):
             else:
                 if merge_prob:
                     for k in ['score', 'score_rnnt']:
-                        hyps_merged[hyp_ids_str][k] = logaddexp(hyps_merged[hyp_ids_str][k], beam[k])
+                        hyps_merged[hyp_ids_str][k] = np.logaddexp(hyps_merged[hyp_ids_str][k], beam[k])
                     # NOTE: LM scores should not be merged
 
                 elif beam['score'] > hyps_merged[hyp_ids_str]['score']:
@@ -175,7 +173,3 @@ class BeamSearch(object):
 
         hyps = [v for v in hyps_merged.values()]
         return hyps
-
-
-def logaddexp(a, b):
-    return math.log(math.exp(a) + math.exp(b))
