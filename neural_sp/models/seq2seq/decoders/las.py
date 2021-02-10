@@ -1441,7 +1441,7 @@ class RNNDecoder(DecoderBase):
         eos_threshold = params.get('recog_eos_threshold')
         softmax_smoothing = params.get('recog_softmax_smoothing')
 
-        helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
+        helper = BeamSearch(beam_width, self.eos, ctc_weight, lm_weight, eouts.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)
 
         # cache token embeddings
