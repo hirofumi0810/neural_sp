@@ -484,7 +484,7 @@ class RNNTransducer(DecoderBase):
 
             if beam_search_type == 'time_sync_simple':
                 hyps, new_hyps_sorted = self._beam_search_time_sync_simple(
-                    hyps, helper, eouts[b:b + 1], elens[b], softmax_smoothing, lm)
+                    hyps, helper, eouts[b:b + 1, :elens[b]], softmax_smoothing, lm)
             elif beam_search_type == 'time_sync':
                 raise NotImplementedError
             else:
@@ -539,12 +539,12 @@ class RNNTransducer(DecoderBase):
 
         return nbest_hyps_idx, None, None
 
-    def _beam_search_time_sync_simple(self, hyps, helper, eout, elen, softmax_smoothing, lm):
+    def _beam_search_time_sync_simple(self, hyps, helper, eout, softmax_smoothing, lm):
         beam_width = helper.beam_width
         lm_weight = helper.lm_weight
         merge_prob = True
 
-        for t in range(elen):
+        for t in range(eout.size(1)):
             # bachfy all hypotheses (not in the cache, non-blank) for prediction network and LM
             batch_hyps = [beam for beam in hyps if beam['update_pred_net']]
             if len(batch_hyps) > 0:
