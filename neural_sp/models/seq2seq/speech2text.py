@@ -522,17 +522,18 @@ class Speech2Text(ModelBase):
         return eout, elens
 
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
-        """Simulate streaming decoding. Both encoding and decoding are performed in the online mode."""
+        """Simulate streaming encoding+decoding. Both encoding and decoding are performed in the online mode."""
         assert task == 'ys'
         assert self.input_type == 'speech'
         assert self.ctc_weight > 0
         assert self.fwd_weight > 0
         assert len(xs) == 1  # batch size
+        assert params.get('recog_block_sync')
         # assert params['recog_length_norm']
+        block_size = params.get('recog_block_sync_size')  # before subsampling
+        cache_emb = params.get('recog_cache_embedding')
         global_params = copy.deepcopy(params)
         global_params['recog_max_len_ratio'] = 1.0
-        block_sync = params['recog_block_sync']
-        block_size = params['recog_block_sync_size']  # before subsampling
 
         streaming = Streaming(xs[0], params, self.enc)
         factor = self.enc.subsampling_factor
@@ -545,9 +546,22 @@ class Speech2Text(ModelBase):
         stdout = False
 
         self.eval()
+        helper = BeamSearch(params.get('recog_beam_width'),
+                            self.eos,
+                            params.get('recog_ctc_weight'),
+                            params.get('recog_lm_weight'),
+                            self.device)
         lm = getattr(self, 'lm_fwd', None)
         lm_second = getattr(self, 'lm_second', None)
-        # with torch.no_grad():
+        lm = helper.verify_lm_eval_mode(lm, params.get('recog_lm_weight'), cache_emb)
+        if lm is not None:
+            assert isinstance(lm, RNNLM)
+        lm_second = helper.verify_lm_eval_mode(lm_second, params.get('recog_lm_second_weight'), cache_emb)
+
+        # cache token embeddings
+        if cache_emb:
+            self.dec_fwd.cache_embedding(self.device)
+
         while True:
             # Encode input features block by block
             x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feature()
@@ -575,58 +589,44 @@ class Speech2Text(ModelBase):
                 eout_block = eout_block[:, :streaming.bd_offset]
             streaming.cache_eout(eout_block)
 
-            # Block-synchronous attention decoding
+            # Block-synchronous decoding
             if isinstance(self.dec_fwd, RNNT):
                 raise NotImplementedError
-            elif isinstance(self.dec_fwd, RNNDecoder) and block_sync:
+            elif isinstance(self.dec_fwd, RNNDecoder):
                 for i in range(math.ceil(eout_block.size(1) / block_size)):
                     eout_block_i = eout_block[:, i * block_size:(i + 1) * block_size]
                     end_hyps, hyps, _ = self.dec_fwd.beam_search_block_sync(
-                        eout_block_i, params, idx2token, hyps, lm,
-                        state_carry_over=False)
-                merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'], reverse=True)
-                if len(merged_hyps) > 0:
-                    best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
-                    if len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos:
-                        # reset beam if <eos> is generated from the best hypothesis
-                        best_hyp_id_prefix = best_hyp_id_prefix[:-1]  # exclude <eos>
-                        # Segmentation strategy 2:
-                        # If <eos> is emitted from the decoder (not CTC),
-                        # the current block is segmented.
-                        if not is_reset:
-                            streaming._bd_offset = eout_block.size(1) - 1
-                            # TODO: fix later
-                            is_reset = True
-                    if len(best_hyp_id_prefix) > 0:
-                        print('\rStreaming (T:%d [10ms], offset:%d [10ms], blank:%d [10ms]): %s' %
-                              (streaming.offset + eout_block.size(1) * factor,
-                               self.dec_fwd.n_frames * factor,
-                               streaming.n_blanks * factor,
-                               idx2token(best_hyp_id_prefix)))
+                        eout_block_i, params, helper, idx2token, hyps, lm)
             elif isinstance(self.dec_fwd, TransformerDecoder):
-                best_hyp_id_prefix = []
                 raise NotImplementedError
+            else:
+                raise NotImplementedError(self.dec_fwd)
+
+            merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'], reverse=True)
+            if len(merged_hyps) > 0:
+                best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
+
+                if len(hyps) == 0 or (len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos):
+                    # reset beam if <eos> is generated from the best hypothesis
+                    best_hyp_id_prefix = best_hyp_id_prefix[:-1]  # exclude <eos>
+                    # Segmentation strategy 2:
+                    # If <eos> is emitted from the decoder (not CTC),
+                    # the current block is segmented.
+                    if not is_reset:
+                        streaming._bd_offset = eout_block.size(1) - 1  # TODO: fix later
+                        is_reset = True
+                if len(best_hyp_id_prefix) > 0:
+                    print('\rStreaming (T:%d [10ms], offset:%d [10ms], blank:%d [10ms]): %s' %
+                          (streaming.offset + eout_block.size(1) * factor,
+                           self.dec_fwd.n_frames * factor,
+                           streaming.n_blanks * factor,
+                           idx2token(best_hyp_id_prefix)))
 
             if is_reset:
-                # Global decoding over the segmented region
-                if not block_sync:
-                    eout = streaming.pop_eouts()
-                    elens = torch.IntTensor([eout.size(1)])
-                    ctc_log_probs = None
-                    if params['recog_ctc_weight'] > 0:
-                        ctc_log_probs = torch.log(self.dec_fwd.ctc_probs(eout))
-                    nbest_hyps_id_offline = self.dec_fwd.beam_search(
-                        eout, elens, global_params, idx2token, lm, lm_second,
-                        ctc_log_probs=ctc_log_probs,
-                        exclude_eos=exclude_eos)[0]
 
                 # pick up the best hyp from ended and active hypotheses
-                if block_sync:
-                    if len(best_hyp_id_prefix) > 0:
-                        best_hyp_id_stream.extend(best_hyp_id_prefix)
-                else:
-                    if len(nbest_hyps_id_offline[0][0]) > 0:
-                        best_hyp_id_stream.extend(nbest_hyps_id_offline[0][0])
+                if len(best_hyp_id_prefix) > 0:
+                    best_hyp_id_stream.extend(best_hyp_id_prefix)
 
                 # reset
                 streaming.reset(stdout=stdout)
@@ -638,18 +638,8 @@ class Speech2Text(ModelBase):
             # next block will start from the frame next to the boundary
             streaming.backoff(x_block, self.dec_fwd, stdout=stdout)
 
-        # Global decoding for tail blocks
-        if not block_sync and streaming.n_cache_block > 0:
-            eout = streaming.pop_eouts()
-            elens = torch.IntTensor([eout.size(1)])
-            nbest_hyps_id_offline = self.dec_fwd.beam_search(
-                eout, elens, global_params, idx2token, lm, lm_second,
-                exclude_eos=exclude_eos)[0]
-            if len(nbest_hyps_id_offline[0][0]) > 0:
-                best_hyp_id_stream.extend(nbest_hyps_id_offline[0][0])
-
         # pick up the best hyp
-        if not is_reset and block_sync and len(best_hyp_id_prefix) > 0:
+        if not is_reset and len(best_hyp_id_prefix) > 0:
             best_hyp_id_stream.extend(best_hyp_id_prefix)
 
         if len(best_hyp_id_stream) > 0:
@@ -674,15 +664,6 @@ class Speech2Text(ModelBase):
         Args:
             xs (List): length `[B]`, which contains arrays of size `[T, input_dim]`
             params (dict): hyper-parameters for decoding
-                beam_width (int): the size of beam
-                min_len_ratio (float): minimum output length ratio to input
-                max_len_ratio (float): maximum output length ratio to input
-                len_penalty (float): length penalty
-                cov_penalty (float): coverage penalty
-                cov_threshold (float): threshold for coverage penalty
-                lm_weight (float): the weight of RNNLM score
-                resolving_unk (bool): not used (to make compatible)
-                fwd_bwd_attention (bool):
             idx2token (): converter from index to token
             exclude_eos (bool): exclude <eos> from best_hyps_id
             refs_id (List): gold token IDs to compute log likelihood

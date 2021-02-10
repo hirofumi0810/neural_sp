@@ -1146,8 +1146,7 @@ class RNNDecoder(DecoderBase):
                 self.prev_spk = speakers[b]
 
             end_hyps = []
-            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state,
-                                        ensmbl_decs)
+            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state, ensmbl_decs)
             streamable_global = True
             ymax = math.ceil(elens[b] * max_len_ratio)
             for i in range(ymax):
@@ -1427,8 +1426,9 @@ class RNNDecoder(DecoderBase):
 
         return nbest_hyps_idx, aws, scores
 
-    def beam_search_block_sync(self, eouts, params, idx2token, hyps,
-                               lm=None, ctc_log_probs=None, state_carry_over=False):
+    def beam_search_block_sync(self, eouts, params, helper, idx2token,
+                               hyps, lm, ctc_log_probs=None,
+                               state_carry_over=False):
         assert eouts.size(0) == 1
         assert self.attn_type == 'mocha'
 
@@ -1437,19 +1437,9 @@ class RNNDecoder(DecoderBase):
         max_len_ratio = params.get('recog_max_len_ratio')
         lp_weight = params.get('recog_length_penalty')
         length_norm = params.get('recog_length_norm')
-        cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
         eos_threshold = params.get('recog_eos_threshold')
         softmax_smoothing = params.get('recog_softmax_smoothing')
-
-        helper = BeamSearch(beam_width, self.eos, ctc_weight, lm_weight, eouts.device)
-        lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)
-        if lm is not None:
-            assert isinstance(lm, RNNLM)
-
-        # cache token embeddings
-        if cache_emb:
-            self.cache_embedding(eouts.device)
 
         end_hyps = []
         if hyps is None:
