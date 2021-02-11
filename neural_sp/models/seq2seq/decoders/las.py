@@ -1332,10 +1332,10 @@ class RNNDecoder(DecoderBase):
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
             # forward/backward second-pass LM rescoring
-            helper.lm_rescoring(end_hyps, lm_second, lm_weight_second,
-                                normalize=length_norm, tag='second')
-            helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd,
-                                normalize=length_norm, tag='second_bwd')
+            end_hyps = helper.lm_rescoring(end_hyps, lm_second, lm_weight_second,
+                                           length_norm=length_norm, tag='second')
+            end_hyps = helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd,
+                                           length_norm=length_norm, tag='second_bwd')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)

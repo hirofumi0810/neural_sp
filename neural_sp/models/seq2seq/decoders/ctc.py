@@ -291,8 +291,11 @@ class CTC(DecoderBase):
                 end_hyps.extend(new_hyps_sorted[:nbest - len(end_hyps)])
 
             # forward/backward second-pass LM rescoring
-            helper.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
-            helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
+            end_hyps = helper.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
+            end_hyps = helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
+
+            # Normalize by length
+            end_hyps = sorted(end_hyps, key=lambda x: x['score'] / max(len(x['hyp'][1:]), 1), reverse=True)
 
             if idx2token is not None:
                 if utt_ids is not None:
