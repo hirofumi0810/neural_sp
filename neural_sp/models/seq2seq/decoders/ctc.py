@@ -69,10 +69,6 @@ class CTC(DecoderBase):
 
         self.space = -1  # TODO(hirofumi): fix later
 
-        # for cache
-        self.prev_spk = ''
-        self.lmstate_final = None
-
         # for posterior plot
         self.prob_dict = {}
         self.data_dict = {}
@@ -282,7 +278,7 @@ class CTC(DecoderBase):
             hyps = self.initialize_beam([self.eos], lmstate)
             self.state_cache = OrderedDict()
 
-            hyps, new_hyps_sorted = self._beam_search(hyps, helper, log_probs, lm,
+            hyps, new_hyps_sorted = self._beam_search(hyps, helper, log_probs[b], lm,
                                                       lp_weight)
 
             # Global pruning
@@ -326,80 +322,83 @@ class CTC(DecoderBase):
 
         return nbest_hyps_idx
 
-    def _beam_search(self, hyps, helper, log_probs, lm, lp_weight):
+    def _beam_search(self, hyps, helper, scores_ctc, lm, lp_weight):
         beam_width = helper.beam_width
         lm_weight = helper.lm_weight
 
-        for t in range(log_probs.size(1)):
-            new_hyps = []
-
+        # scores_ctc: `[T, vocab]`
+        for t in range(scores_ctc.size(0)):
             # Pick up the top-k scores
-            log_probs_topk, topk_ids = torch.topk(
-                log_probs[:, t], k=min(beam_width, self.vocab), dim=-1, largest=True, sorted=True)
+            _, topk_ids = torch.topk(
+                scores_ctc[t, 1:],  # exclude blank
+                k=min(beam_width, self.vocab), dim=-1, largest=True, sorted=True)
+            topk_ids += 1  # index:0 is for blank
 
+            # TODO: batchfy LM update here
+
+            new_hyps = []
             for j, beam in enumerate(hyps):
-                hyp = beam['hyp'][:]
                 p_b = beam['p_b']
                 p_nb = beam['p_nb']
-                score_lm = beam['score_lm']
+                total_score_lm = beam['score_lm']
 
                 # case 1. hyp is not extended
-                new_p_b = np.logaddexp(p_b + log_probs[0, t, self.blank].item(),
-                                       p_nb + log_probs[0, t, self.blank].item())
-                if len(hyp) > 1:
-                    new_p_nb = p_nb + log_probs[0, t, hyp[-1]].item()
+                new_p_b = np.logaddexp(p_b + scores_ctc[t, self.blank].item(),
+                                       p_nb + scores_ctc[t, self.blank].item())
+                if len(beam['hyp'][1:]) > 0:
+                    new_p_nb = p_nb + scores_ctc[t, beam['hyp'][-1]].item()
                 else:
                     new_p_nb = LOG_0
-                score_ctc = np.logaddexp(new_p_b, new_p_nb)
-                score_lp = len(hyp[1:]) * lp_weight
-                new_hyps.append({'hyp': hyp,
-                                 'score': score_ctc + score_lm + score_lp,
+                total_score_ctc = np.logaddexp(new_p_b, new_p_nb)
+                total_score_lp = len(beam['hyp'][1:]) * lp_weight
+                total_score = total_score_ctc + total_score_lp + total_score_lm * lm_weight
+                new_hyps.append({'hyp': beam['hyp'][:],
+                                 'score': total_score,
                                  'p_b': new_p_b,
                                  'p_nb': new_p_nb,
-                                 'score_ctc': score_ctc,
-                                 'score_lm': score_lm,
-                                 'score_lp': score_lp,
+                                 'score_ctc': total_score_ctc,
+                                 'score_lm': total_score_lm,
+                                 'score_lp': total_score_lp,
                                  'lmstate': beam['lmstate']})
 
                 # Update LM states for shallow fusion
                 if lm is not None:
-                    _, lmstate, lm_log_probs = lm.predict(
-                        log_probs.new_zeros(1, 1, dtype=torch.int64).fill_(hyp[-1]),
+                    _, lmstate, scores_lm = lm.predict(
+                        scores_ctc.new_zeros(1, 1, dtype=torch.int64).fill_(beam['hyp'][-1]),
                         beam['lmstate'])
                 else:
                     lmstate = None
 
                 # case 2. hyp is extended
                 new_p_b = LOG_0
-                for c in tensor2np(topk_ids)[0]:
-                    p_t = log_probs[0, t, c].item()
+                for k in range(beam_width):
+                    idx = topk_ids[k].item()
+                    p_t = scores_ctc[t, idx].item()
 
-                    if c == self.blank:
-                        continue
-
-                    c_prev = hyp[-1] if len(hyp) > 1 else None
-                    if c == c_prev:
+                    c_prev = beam['hyp'][-1] if len(beam['hyp']) > 1 else None
+                    if idx == c_prev:
                         new_p_nb = p_b + p_t
                         # TODO(hirofumi): apply character LM here
                     else:
                         new_p_nb = np.logaddexp(p_b + p_t, p_nb + p_t)
                         # TODO(hirofumi): apply character LM here
-                        if c == self.space:
+                        if idx == self.space:
                             pass
                             # TODO(hirofumi): apply word LM here
 
-                    score_ctc = np.logaddexp(new_p_b, new_p_nb)
-                    score_lp = (len(hyp[1:]) + 1) * lp_weight
-                    if lm_weight > 0 and lm is not None:
-                        local_score_lm = lm_log_probs[0, 0, c].item() * lm_weight
-                        score_lm += local_score_lm
-                    new_hyps.append({'hyp': hyp + [c],
-                                     'score': score_ctc + score_lm + score_lp,
+                    total_score_ctc = np.logaddexp(new_p_b, new_p_nb)
+                    total_score_lp = (len(beam['hyp'][1:]) + 1) * lp_weight
+                    total_score = total_score_ctc + total_score_lp
+                    if lm is not None:
+                        total_score_lm += scores_lm[0, 0, idx].item()
+                    total_score += total_score_lm * lm_weight
+                    new_hyps.append({'hyp': beam['hyp'] + [idx],
+                                     'score': total_score,
                                      'p_b': new_p_b,
                                      'p_nb': new_p_nb,
-                                     'score_ctc': score_ctc,
-                                     'score_lm': score_lm,
-                                     'score_lp': score_lp,
+                                     'score_ctc': total_score_ctc,
+                                     'score_lm': total_score_lm,
+                                     'score_lp': total_score_lp,
                                      'lmstate': lmstate})
 
             # Pruning
