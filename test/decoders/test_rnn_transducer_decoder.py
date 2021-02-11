@@ -98,6 +98,7 @@ def make_decode_params(**kwargs):
         recog_max_len_ratio=1.0,
         recog_lm_state_carry_over=False,
         recog_softmax_smoothing=1.0,
+        recog_rnnt_beam_search_type='time_sync_simple',
         nbest=1,
     )
     args.update(kwargs)
@@ -198,9 +199,8 @@ def test_decoding(params):
             assert len(hyps) == batch_size
             assert aws is None
         else:
-            out = dec.beam_search(eouts, elens, params, idx2token=idx2token,
-                                  lm=lm, lm_second=lm_second, lm_second_bwd=lm_second_bwd,
-                                  ctc_log_probs=ctc_log_probs,
+            out = dec.beam_search(eouts, elens, params, idx2token,
+                                  lm, lm_second, lm_second_bwd, ctc_log_probs,
                                   nbest=params['nbest'], exclude_eos=False,
                                   refs_id=None, utt_ids=None, speakers=None,
                                   ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[])
