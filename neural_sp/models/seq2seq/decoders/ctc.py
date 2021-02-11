@@ -69,6 +69,10 @@ class CTC(DecoderBase):
 
         self.space = -1  # TODO(hirofumi): fix later
 
+        # for cache
+        self.prev_spk = ''
+        self.lmstate_final = None
+
         # for posterior plot
         self.prob_dict = {}
         self.data_dict = {}
