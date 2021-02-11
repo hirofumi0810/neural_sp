@@ -574,7 +574,10 @@ class RNNTransducer(DecoderBase):
                     hyps[index]['dout'] = douts[i:i + 1]
                     hyps[index]['dstate'] = dstate
                     hyps[index]['lmstate'] = lmstate
-                    hyps[index]['next_scores_lm'] = scores_lm[i:i + 1]
+                    if lm is not None:
+                        hyps[index]['next_scores_lm'] = scores_lm[i:i + 1]
+                    else:
+                        hyps[index]['next_scores_lm'] = None
                     assert hyps[index]['update_pred_net']
                     hyps[index]['update_pred_net'] = False
 
@@ -582,7 +585,7 @@ class RNNTransducer(DecoderBase):
                     self.state_cache[beam['hyp_ids_str']] = {
                         'dout': douts[i:i + 1],
                         'dstate': dstate,
-                        'next_scores_lm': scores_lm[i:i + 1],
+                        'next_scores_lm': hyps[index]['next_scores_lm'],
                         'lmstate': lmstate,
                     }
 
@@ -610,9 +613,9 @@ class RNNTransducer(DecoderBase):
                         continue
 
                     total_score = total_scores_topk[0, k].item()
-                    total_score_lm = 0
+                    total_score_lm = beam['score_lm']
                     if lm is not None:
-                        total_score_lm = beam['score_lm'] + beam['next_scores_lm'][0, -1, idx].item()
+                        total_score_lm += beam['next_scores_lm'][0, -1, idx].item()
                         total_score += total_score_lm * lm_weight
 
                     hyp_ids = beam['hyp'] + [idx]
