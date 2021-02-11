@@ -85,7 +85,6 @@ class RNNTransducer(DecoderBase):
         # for cache
         self.prev_spk = ''
         self.lmstate_final = None
-        self.state_cache = OrderedDict()
         self.embed_cache = None
 
         if ctc_weight > 0:
@@ -426,9 +425,9 @@ class RNNTransducer(DecoderBase):
             elens (IntTensor): `[B]`
             params (dict): decoding hyperparameters
             idx2token (): converter from index to token
-            lm (torch.nn.module): firsh path LM
-            lm_second (torch.nn.module): second path LM
-            lm_second_bwd (torch.nn.module): secoding path backward LM
+            lm (torch.nn.module): firsh-pass LM
+            lm_second (torch.nn.module): second-pass LM
+            lm_second_bwd (torch.nn.module): second-pass backward LM
             ctc_log_probs (FloatTensor): `[B, T, vocab]`
             nbest (int): number of N-best list
             exclude_eos (bool): exclude <eos> from hypothesis
@@ -486,6 +485,7 @@ class RNNTransducer(DecoderBase):
 
             end_hyps = []
             hyps = self.initialize_beam([self.eos], dstate, lmstate)
+            self.state_cache = OrderedDict()
 
             if beam_search_type == 'time_sync_simple':
                 hyps, new_hyps_sorted = self._beam_search_time_sync_simple(
@@ -500,15 +500,13 @@ class RNNTransducer(DecoderBase):
             if len(end_hyps) < nbest and nbest > 1:
                 end_hyps.extend(new_hyps_sorted[:nbest - len(end_hyps)])
 
-            # forward/backward second path LM rescoring
+            # forward/backward second-pass LM rescoring
             helper.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
             helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
-            # Sort by score
+            # Normalize by length
             end_hyps = sorted(end_hyps, key=lambda x: x['score'] / max(len(x['hyp'][1:]), 1), reverse=True)
-
-            # Reset state cache
-            self.state_cache = OrderedDict()
+            # NOTE: See Algorithm 1 in https://arxiv.org/abs/1211.3711
 
             if idx2token is not None:
                 if utt_ids is not None:
@@ -524,17 +522,17 @@ class RNNTransducer(DecoderBase):
                     logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
                     logger.info('log prob (hyp, rnnt): %.7f' % end_hyps[k]['score_rnnt'])
                     if lm is not None:
-                        logger.info('log prob (hyp, first-path lm): %.7f' %
+                        logger.info('log prob (hyp, first-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm'] * lm_weight))
                     if lm_second is not None:
-                        logger.info('log prob (hyp, second-path lm): %.7f' %
+                        logger.info('log prob (hyp, second-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
                     if lm_second_bwd is not None:
-                        logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
+                        logger.info('log prob (hyp, second-pass lm, reverse): %.7f' %
                                     (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     logger.info('-' * 50)
 
-            # N-best list
+            # N-best list (exclude <eos>)
             nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
 
         # Store ASR/LM state

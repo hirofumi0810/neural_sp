@@ -19,8 +19,6 @@ from neural_sp.models.criterion import (
 )
 # from neural_sp.models.criterion import minimum_bayes_risk
 from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.models.lm.transformerlm import TransformerLM
-from neural_sp.models.lm.transformer_xl import TransformerXL
 from neural_sp.models.modules.attention import AttentionMechanism
 from neural_sp.models.modules.gmm_attention import GMMAttention
 from neural_sp.models.modules.initialization import init_with_uniform
@@ -1057,9 +1055,9 @@ class RNNDecoder(DecoderBase):
             elens (IntTensor): `[B]`
             params (dict): decoding hyperparameters
             idx2token (): converter from index to token
-            lm (torch.nn.module): firsh path LM
-            lm_second (torch.nn.module): second path LM
-            lm_second_bwd (torch.nn.module): secoding path backward LM
+            lm (torch.nn.module): firsh-pass LM
+            lm_second (torch.nn.module): second-pass LM
+            lm_second_bwd (torch.nn.module): second-pass backward LM
             ctc_log_probs (FloatTensor): `[B, T, vocab]`
             nbest (int): number of N-best list
             exclude_eos (bool): exclude <eos> from hypothesis
@@ -1333,7 +1331,7 @@ class RNNDecoder(DecoderBase):
             elif len(end_hyps) < nbest and nbest > 1:
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
-            # forward/backward second path LM rescoring
+            # forward/backward second-pass LM rescoring
             helper.lm_rescoring(end_hyps, lm_second, lm_weight_second,
                                 normalize=length_norm, tag='second')
             helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd,
@@ -1368,13 +1366,13 @@ class RNNDecoder(DecoderBase):
                         logger.info('log prob (hyp, ctc): %.7f' %
                                     (end_hyps[k]['score_ctc'] * ctc_weight))
                     if lm is not None:
-                        logger.info('log prob (hyp, first-path lm): %.7f' %
+                        logger.info('log prob (hyp, first-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm'] * lm_weight))
                     if lm_second is not None:
-                        logger.info('log prob (hyp, second-path lm): %.7f' %
+                        logger.info('log prob (hyp, second-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
                     if lm_second_bwd is not None:
-                        logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
+                        logger.info('log prob (hyp, second-pass lm, reverse): %.7f' %
                                     (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     if self.attn_type == 'mocha':
                         logger.info('streamable: %s' % end_hyps[k]['streamable'])
@@ -1614,7 +1612,7 @@ class RNNDecoder(DecoderBase):
                     logger.info('log prob (hyp, ctc): %.7f' %
                                 (merged_hyps[k]['score_ctc'] * ctc_weight))
                 if lm is not None:
-                    logger.info('log prob (hyp, first-path lm): %.7f' %
+                    logger.info('log prob (hyp, first-pass lm): %.7f' %
                                 (merged_hyps[k]['score_lm'] * lm_weight))
                 logger.info('-' * 50)
 

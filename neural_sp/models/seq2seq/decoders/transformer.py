@@ -589,11 +589,11 @@ class TransformerDecoder(DecoderBase):
             elens (IntTensor): `[B]`
             params (dict): decoding hyperparameters
             idx2token (): converter from index to token
-            lm (torch.nn.module): firsh path LM
-            lm_second (torch.nn.module): second path LM
-            lm_second_bwd (torch.nn.module): secoding path backward LM
+            lm (torch.nn.module): firsh-pass LM
+            lm_second (torch.nn.module): second-pass LM
+            lm_second_bwd (torch.nn.module): secoding-pass backward LM
             ctc_log_probs (FloatTensor):
-            nbest (int):
+            nbest (int): number of N-best list
             exclude_eos (bool): exclude <eos> from hypothesis
             refs_id (List): reference list
             utt_ids (List): utterance id list
@@ -854,11 +854,9 @@ class TransformerDecoder(DecoderBase):
             elif len(end_hyps) < nbest and nbest > 1:
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
-            # forward second path LM rescoring
+            # forward/backward second-pass LM rescoring
             helper.lm_rescoring(end_hyps, lm_second, lm_weight_second,
                                 normalize=length_norm, tag='second')
-
-            # backward secodn path LM rescoring
             helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd,
                                 normalize=length_norm, tag='second_bwd')
 
@@ -892,13 +890,13 @@ class TransformerDecoder(DecoderBase):
                         logger.info('log prob (hyp, ctc): %.7f' %
                                     (end_hyps[k]['score_ctc'] * ctc_weight))
                     if lm is not None:
-                        logger.info('log prob (hyp, first-path lm): %.7f' %
+                        logger.info('log prob (hyp, first-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm'] * lm_weight))
                     if lm_second is not None:
-                        logger.info('log prob (hyp, second-path lm): %.7f' %
+                        logger.info('log prob (hyp, second-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
                     if lm_second_bwd is not None:
-                        logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
+                        logger.info('log prob (hyp, second-pass lm, reverse): %.7f' %
                                     (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     if self.attn_type == 'mocha':
                         logger.info('streamable: %s' % end_hyps[k]['streamable'])
