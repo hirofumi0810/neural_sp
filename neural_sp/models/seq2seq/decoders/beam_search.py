@@ -4,7 +4,6 @@
 """Utility functions for beam search decoding."""
 
 import logging
-import math
 import numpy as np
 import torch
 
@@ -18,7 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 class BeamSearch(object):
-    def __init__(self, beam_width, eos, ctc_weight, device, beam_width_bwd=0):
+    def __init__(self, beam_width, eos, ctc_weight, lm_weight,
+                 device, beam_width_bwd=0):
 
         super(BeamSearch, self).__init__()
 
@@ -28,6 +28,7 @@ class BeamSearch(object):
         self.device = device
 
         self.ctc_weight = ctc_weight
+        self.lm_weight = lm_weight
 
     def remove_complete_hyp(self, hyps_sorted, end_hyps, prune=True, backward=False):
         new_hyps = []
@@ -65,7 +66,8 @@ class BeamSearch(object):
     def add_lm_score(self, after_topk=True):
         raise NotImplementedError
 
-    def update_rnnlm_state(self, lm, hyp, y):
+    @staticmethod
+    def update_rnnlm_state(lm, hyp, y):
         """Update RNNLM state for a single utterance.
 
         Args:
@@ -75,6 +77,8 @@ class BeamSearch(object):
         Returns:
             lmout (FloatTensor): `[1, 1, lm_n_units]`
             lmstate (dict):
+                hxs (FloatTensor): `[n_layers, 1, n_units]`
+                cxs (FloatTensor): `[n_layers, 1, n_units]`
             scores_lm (FloatTensor): `[1, 1, vocab]`
 
         """
@@ -83,7 +87,8 @@ class BeamSearch(object):
             lmout, lmstate, scores_lm = lm.predict(y, hyp['lmstate'])
         return lmout, lmstate, scores_lm
 
-    def update_rnnlm_state_batch(self, lm, hyps, y):
+    @staticmethod
+    def update_rnnlm_state_batch(lm, hyps, y):
         """Update RNNLM state in batch-mode.
 
         Args:
@@ -93,6 +98,8 @@ class BeamSearch(object):
         Returns:
             lmout (FloatTensor): `[B, 1, lm_n_units]`
             lmstate (dict):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
             scores_lm (FloatTensor): `[B, 1, vocab]`
 
         """
@@ -105,23 +112,23 @@ class BeamSearch(object):
             lmout, lmstate, scores_lm = lm.predict(y, lmstate)
         return lmout, lmstate, scores_lm
 
-    def lm_rescoring(self, hyps, lm, lm_weight, reverse=False, normalize=False,
-                     tag=''):
+    @staticmethod
+    def lm_rescoring(hyps, lm, lm_weight, reverse=False, length_norm=False, tag=''):
         if lm is None:
-            return
+            return hyps
         for i in range(len(hyps)):
             ys = hyps[i]['hyp']  # include <sos>
             if reverse:
                 ys = ys[::-1]
 
-            ys = [np2tensor(np.fromiter(ys, dtype=np.int64), self.device)]
+            ys = [np2tensor(np.fromiter(ys, dtype=np.int64), lm.device)]
             ys_in = pad_list([y[:-1] for y in ys], -1)  # `[1, L-1]`
             ys_out = pad_list([y[1:] for y in ys], -1)  # `[1, L-1]`
 
             if ys_in.size(1) > 0:
                 _, _, scores_lm = lm.predict(ys_in, None)
                 score_lm = sum([scores_lm[0, t, ys_out[0, t]] for t in range(ys_out.size(1))])
-                if normalize:
+                if length_norm:
                     score_lm /= ys_out.size(1)  # normalize by length
             else:
                 score_lm = 0
@@ -129,7 +136,11 @@ class BeamSearch(object):
             hyps[i]['score'] += score_lm * lm_weight
             hyps[i]['score_lm_' + tag] = score_lm
 
-    def verify_lm_eval_mode(self, lm, lm_weight, cache_emb=True):
+        # DO NOT sort here !!!
+        return hyps
+
+    @staticmethod
+    def verify_lm_eval_mode(lm, lm_weight, cache_emb=True):
         if lm is not None:
             assert lm_weight > 0
             lm.eval()
@@ -137,7 +148,8 @@ class BeamSearch(object):
                 lm.cache_embedding(lm.device)
         return lm
 
-    def merge_rnnt_path(self, hyps, merge_prob=False):
+    @staticmethod
+    def merge_rnnt_path(hyps, merge_prob=False):
         """Merge multiple alignment paths corresponding to the same token IDs for RNN-T.
 
         Args:
@@ -155,7 +167,7 @@ class BeamSearch(object):
             else:
                 if merge_prob:
                     for k in ['score', 'score_rnnt']:
-                        hyps_merged[hyp_ids_str][k] = expsumlog(hyps_merged[hyp_ids_str][k], beam[k])
+                        hyps_merged[hyp_ids_str][k] = np.logaddexp(hyps_merged[hyp_ids_str][k], beam[k])
                     # NOTE: LM scores should not be merged
 
                 elif beam['score'] > hyps_merged[hyp_ids_str]['score']:
@@ -164,7 +176,3 @@ class BeamSearch(object):
 
         hyps = [v for v in hyps_merged.values()]
         return hyps
-
-
-def expsumlog(a, b):
-    return math.log(math.exp(a) + math.exp(b))

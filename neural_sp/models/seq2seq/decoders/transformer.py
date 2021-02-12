@@ -402,7 +402,7 @@ class TransformerDecoder(DecoderBase):
         causal_mask = tgt_mask.new_ones(ymax, ymax, dtype=tgt_mask.dtype)
         if torch_12_plus:
             causal_mask = causal_mask.byte()
-        causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
+        causal_mask = torch.tril(causal_mask).unsqueeze(0)
         tgt_mask = tgt_mask & causal_mask  # `[B, L (query), L (key)]`
 
         # Create source-target mask
@@ -497,7 +497,7 @@ class TransformerDecoder(DecoderBase):
             causal_mask = eouts.new_ones(i + 1, i + 1, dtype=torch.uint8)
             if torch_12_plus:
                 causal_mask = causal_mask.byte()
-            causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0).repeat([bs, 1, 1])
+            causal_mask = torch.tril(causal_mask).unsqueeze(0).repeat([bs, 1, 1])
 
             new_cache = [None] * self.n_layers
             xy_aws_layers = []
@@ -589,11 +589,11 @@ class TransformerDecoder(DecoderBase):
             elens (IntTensor): `[B]`
             params (dict): decoding hyperparameters
             idx2token (): converter from index to token
-            lm (torch.nn.module): firsh path LM
-            lm_second (torch.nn.module): second path LM
-            lm_second_bwd (torch.nn.module): secoding path backward LM
+            lm (torch.nn.module): firsh-pass LM
+            lm_second (torch.nn.module): second-pass LM
+            lm_second_bwd (torch.nn.module): secoding-pass backward LM
             ctc_log_probs (FloatTensor):
-            nbest (int):
+            nbest (int): number of N-best list
             exclude_eos (bool): exclude <eos> from hypothesis
             refs_id (List): reference list
             utt_ids (List): utterance id list
@@ -627,7 +627,7 @@ class TransformerDecoder(DecoderBase):
         softmax_smoothing = params.get('recog_softmax_smoothing')
         eps_wait = params.get('recog_mma_delay_threshold')
 
-        helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device)
+        helper = BeamSearch(beam_width, self.eos, ctc_weight, lm_weight, self.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)
         lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second, cache_emb)
         lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd, cache_emb)
@@ -702,7 +702,7 @@ class TransformerDecoder(DecoderBase):
                 causal_mask = eouts.new_ones(i + 1, i + 1, dtype=torch.uint8)
                 if torch_12_plus:
                     causal_mask = causal_mask.byte()
-                causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0).repeat([ys.size(0), 1, 1])
+                causal_mask = torch.tril(causal_mask).unsqueeze(0).repeat([ys.size(0), 1, 1])
 
                 if self.embed_cache is not None:
                     ys_emb = self.embed_cache[ys]
@@ -854,13 +854,11 @@ class TransformerDecoder(DecoderBase):
             elif len(end_hyps) < nbest and nbest > 1:
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
-            # forward second path LM rescoring
-            helper.lm_rescoring(end_hyps, lm_second, lm_weight_second,
-                                normalize=length_norm, tag='second')
-
-            # backward secodn path LM rescoring
-            helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd,
-                                normalize=length_norm, tag='second_bwd')
+            # forward/backward second-pass LM rescoring
+            end_hyps = helper.lm_rescoring(end_hyps, lm_second, lm_weight_second,
+                                           length_norm=length_norm, tag='second')
+            end_hyps = helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd,
+                                           length_norm=length_norm, tag='second_bwd')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
@@ -892,13 +890,13 @@ class TransformerDecoder(DecoderBase):
                         logger.info('log prob (hyp, ctc): %.7f' %
                                     (end_hyps[k]['score_ctc'] * ctc_weight))
                     if lm is not None:
-                        logger.info('log prob (hyp, first-path lm): %.7f' %
+                        logger.info('log prob (hyp, first-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm'] * lm_weight))
                     if lm_second is not None:
-                        logger.info('log prob (hyp, second-path lm): %.7f' %
+                        logger.info('log prob (hyp, second-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
                     if lm_second_bwd is not None:
-                        logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
+                        logger.info('log prob (hyp, second-pass lm, reverse): %.7f' %
                                     (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     if self.attn_type == 'mocha':
                         logger.info('streamable: %s' % end_hyps[k]['streamable'])
@@ -941,7 +939,7 @@ class TransformerDecoder(DecoderBase):
                 aws = [[aws[b][n][:, :-1] if eos_flags[b][n] else aws[b][n] for n in range(nbest)] for b in range(bs)]
 
         # Store ASR/LM state
-        if isinstance(lm, RNNLM):
+        if bs == 1:
             self.lmstate_final = end_hyps[0]['lmstate']
 
         return nbest_hyps_idx, aws, scores

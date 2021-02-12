@@ -39,6 +39,12 @@ class DecoderBase(ModelBase):
     def greedy(self, eouts, elens, max_len_ratio):
         raise NotImplementedError
 
+    def cache_embedding(self, device):
+        raise NotImplementedError
+
+    def initialize_beam(self, hyp, lmstate):
+        raise NotImplementedError
+
     def beam_search(self, eouts, elens, params, idx2token):
         raise NotImplementedError
 
@@ -92,7 +98,7 @@ class DecoderBase(ModelBase):
             plt.close()
 
     def _plot_ctc(self, save_path=None, topk=10):
-        """Plot CTC posteriors."""
+        """Plot CTC posterior probabilities."""
         if self.ctc_weight == 0:
             return
         from matplotlib import pyplot as plt
@@ -141,9 +147,9 @@ class DecoderBase(ModelBase):
             eouts (FloatTensor): `[B, T, enc_units]`
             elens (IntTensor): `[B]`
             params (dict): decoding hyperparameters
-            lm: firsh path LM
-            lm_second: second path LM
-            lm_second_bwd: second path backward LM
+            lm (torch.nn.Module): firsh-pass LM
+            lm_second (torch.nn.Module): second-pass LM
+            lm_second_bwd (torch.nn.Module): second-pass backward LM
         Returns:
             probs (FloatTensor): `[B, T, vocab]`
             topk_ids (LongTensor): `[B, T, topk]`
@@ -191,7 +197,7 @@ class DecoderBase(ModelBase):
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
             temperature (float): softmax temperature
-            topk (int):
+            topk (int): top-K classes to sample
         Returns:
             probs (FloatTensor): `[B, T, vocab]`
             topk_ids (LongTensor): `[B, T, topk]`

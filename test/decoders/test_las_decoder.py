@@ -437,8 +437,7 @@ def test_streaming_decoding(params):
 
     ctc_log_probs = None
     if params['recog_ctc_weight'] > 0:
-        ctc_logits = torch.FloatTensor(batch_size, emax, VOCAB, device=device)
-        ctc_log_probs = torch.softmax(ctc_logits, dim=-1)
+        ctc_log_probs = torch.FloatTensor(batch_size, emax, VOCAB, device=device)
 
     args_lm = make_args_rnnlm()
     module_rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')
@@ -456,13 +455,20 @@ def test_streaming_decoding(params):
     n_chunks = math.ceil(emax / N_l)
     hyps = None
 
+    module_bs = importlib.import_module('neural_sp.models.seq2seq.decoders.beam_search')
+    helper = module_bs.BeamSearch(params['recog_beam_width'],
+                                  dec.eos,
+                                  params['recog_ctc_weight'],
+                                  params['recog_lm_weight'],
+                                  device)
+
     dec.eval()
     with torch.no_grad():
         for chunk_idx in range(n_chunks):
             eouts_chunk = eouts[:, N_l * chunk_idx:N_l * (chunk_idx + 1)]
-            out = dec.beam_search_block_sync(eouts_chunk, params, idx2token=idx2token,
-                                             lm=lm, ctc_log_probs=ctc_log_probs,
-                                             hyps=hyps)
+            out = dec.beam_search_block_sync(eouts_chunk, params, helper, idx2token,
+                                             hyps, lm,
+                                             ctc_log_probs=ctc_log_probs)
             assert len(out) == 3
             end_hyps, hyps, _ = out
             assert isinstance(end_hyps, list)
