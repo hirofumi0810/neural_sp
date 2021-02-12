@@ -14,6 +14,7 @@ import torch.nn as nn
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
 from neural_sp.models.lm.rnnlm import RNNLM
+from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
 from neural_sp.models.seq2seq.decoders.build import build_decoder
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.las import RNNDecoder
@@ -532,8 +533,6 @@ class Speech2Text(ModelBase):
         # assert params['recog_length_norm']
         block_size = params.get('recog_block_sync_size')  # before subsampling
         cache_emb = params.get('recog_cache_embedding')
-        global_params = copy.deepcopy(params)
-        global_params['recog_max_len_ratio'] = 1.0
 
         streaming = Streaming(xs[0], params, self.enc)
         factor = self.enc.subsampling_factor
@@ -590,7 +589,9 @@ class Speech2Text(ModelBase):
             streaming.cache_eout(eout_block)
 
             # Block-synchronous decoding
-            if isinstance(self.dec_fwd, RNNT):
+            if ctc_weight == 1:
+                raise NotImplementedError
+            elif isinstance(self.dec_fwd, RNNT):
                 raise NotImplementedError
             elif isinstance(self.dec_fwd, RNNDecoder):
                 for i in range(math.ceil(eout_block.size(1) / block_size)):
@@ -615,6 +616,7 @@ class Speech2Text(ModelBase):
                     if not is_reset:
                         streaming._bd_offset = eout_block.size(1) - 1  # TODO: fix later
                         is_reset = True
+
                 if len(best_hyp_id_prefix) > 0:
                     print('\rStreaming (T:%d [10ms], offset:%d [10ms], blank:%d [10ms]): %s' %
                           (streaming.offset + eout_block.size(1) * factor,
