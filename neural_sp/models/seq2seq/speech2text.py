@@ -458,7 +458,7 @@ class Speech2Text(ModelBase):
             elif task == 'ys_sub2':
                 assert self.ctc_weight_sub2 > 0
 
-            probs = getattr(self, 'dec_' + dir).probs(eout_dict[task]['xs'])
+            probs = getattr(self, 'dec_' + dir).ctc.probs(eout_dict[task]['xs'])
             if topk is None:
                 topk = probs.size(-1)  # return all classes
             _, topk_ids = torch.topk(probs, k=topk, dim=-1, largest=True, sorted=True)
