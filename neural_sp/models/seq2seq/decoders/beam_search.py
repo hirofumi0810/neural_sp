@@ -149,6 +149,35 @@ class BeamSearch(object):
         return lm
 
     @staticmethod
+    def merge_ctc_path(hyps, merge_prob=False):
+        """Merge multiple alignment paths corresponding to the same token IDs for CTC.
+
+        Args:
+            hyps (List): length of `[beam_width]`
+        Returns:
+            hyps (List): length of `[less than beam_width]`
+
+        """
+        # NOTE: assumming hyps is already sorted
+        hyps_merged = {}
+        for beam in hyps:
+            hyp_ids_str = beam['hyp_ids_str']
+            if hyp_ids_str not in hyps_merged.keys():
+                hyps_merged[hyp_ids_str] = beam
+            else:
+                if merge_prob:
+                    for k in ['score', 'score_ctc']:
+                        hyps_merged[hyp_ids_str][k] = np.logaddexp(hyps_merged[hyp_ids_str][k], beam[k])
+                    # NOTE: LM scores should not be merged
+
+                elif beam['score'] > hyps_merged[hyp_ids_str]['score']:
+                    # Otherwise, pick up a path having higher log-probability
+                    hyps_merged[hyp_ids_str] = beam
+
+        hyps = [v for v in hyps_merged.values()]
+        return hyps
+
+    @staticmethod
     def merge_rnnt_path(hyps, merge_prob=False):
         """Merge multiple alignment paths corresponding to the same token IDs for RNN-T.
 
