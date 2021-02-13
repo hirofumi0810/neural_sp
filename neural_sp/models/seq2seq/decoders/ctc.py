@@ -191,6 +191,28 @@ class CTC(DecoderBase):
 
         return trigger_points_pred
 
+    def probs(self, eouts, temperature=1.):
+        """Get CTC probabilities.
+
+        Args:
+            eouts (FloatTensor): `[B, T, enc_units]`
+        Returns:
+            probs (FloatTensor): `[B, T, vocab]`
+
+        """
+        return torch.softmax(self.output(eouts) / temperature, dim=-1)
+
+    def scores(self, eouts, temperature=1.):
+        """Get log-scale CTC probabilities.
+
+        Args:
+            eouts (FloatTensor): `[B, T, enc_units]`
+        Returns:
+            log_probs (FloatTensor): `[B, T, vocab]`
+
+        """
+        return torch.log_softmax(self.output(eouts) / temperature, dim=-1)
+
     def greedy(self, eouts, elens):
         """Greedy decoding.
 

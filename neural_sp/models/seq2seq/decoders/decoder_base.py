@@ -6,11 +6,9 @@
 import logging
 import numpy as np
 import os
-import torch
 import shutil
 
 from neural_sp.models.base import ModelBase
-from neural_sp.models.torch_utils import np2tensor
 
 import matplotlib
 matplotlib.use('Agg')
@@ -37,6 +35,9 @@ class DecoderBase(ModelBase):
         self._quantity_loss_weight = getattr(self, 'quantity_loss_weight', 0)
 
     def greedy(self, eouts, elens, max_len_ratio):
+        raise NotImplementedError
+
+    def embed_token_id(self, indices):
         raise NotImplementedError
 
     def cache_embedding(self, device):
@@ -137,90 +138,3 @@ class DecoderBase(ModelBase):
         if save_path is not None:
             plt.savefig(os.path.join(save_path, 'prob.png'))
         plt.close()
-
-    def decode_ctc(self, eouts, elens, params, idx2token,
-                   lm=None, lm_second=None, lm_second_bwd=None,
-                   nbest=1, refs_id=None, utt_ids=None, speakers=None):
-        """Decoding with CTC scores in the inference stage.
-
-        Args:
-            eouts (FloatTensor): `[B, T, enc_units]`
-            elens (IntTensor): `[B]`
-            params (dict): decoding hyperparameters
-            lm (torch.nn.Module): firsh-pass LM
-            lm_second (torch.nn.Module): second-pass LM
-            lm_second_bwd (torch.nn.Module): second-pass backward LM
-        Returns:
-            probs (FloatTensor): `[B, T, vocab]`
-            topk_ids (LongTensor): `[B, T, topk]`
-            nbest_hyps (List[List[List]]): length `[B]`, which contains a list of length `[n_best]`,
-                which contains a list of length `[L]`
-
-        """
-        if params.get('recog_beam_width') == 1:
-            nbest_hyps = self.ctc.greedy(eouts, elens)
-        else:
-            nbest_hyps = self.ctc.beam_search(eouts, elens, params, idx2token,
-                                              lm, lm_second, lm_second_bwd,
-                                              nbest, refs_id, utt_ids, speakers)
-        return nbest_hyps
-
-    def ctc_probs(self, eouts, temperature=1.):
-        """Return CTC probabilities.
-
-        Args:
-            eouts (FloatTensor): `[B, T, enc_units]`
-        Returns:
-            probs (FloatTensor): `[B, T, vocab]`
-
-        """
-        if self.ctc.output is not None:
-            eouts = self.ctc.output(eouts)
-        return torch.softmax(eouts / temperature, dim=-1)
-
-    def ctc_log_probs(self, eouts, temperature=1.):
-        """Return log-scale CTC probabilities.
-
-        Args:
-            eouts (FloatTensor): `[B, T, enc_units]`
-        Returns:
-            log_probs (FloatTensor): `[B, T, vocab]`
-
-        """
-        if self.ctc.output is not None:
-            eouts = self.ctc.output(eouts)
-        return torch.log_softmax(eouts / temperature, dim=-1)
-
-    def ctc_probs_topk(self, eouts, temperature=1., topk=None):
-        """Get CTC top-K probabilities.
-
-        Args:
-            eouts (FloatTensor): `[B, T, enc_units]`
-            temperature (float): softmax temperature
-            topk (int): top-K classes to sample
-        Returns:
-            probs (FloatTensor): `[B, T, vocab]`
-            topk_ids (LongTensor): `[B, T, topk]`
-
-        """
-        probs = torch.softmax(self.ctc.output(eouts) / temperature, dim=-1)
-        if topk is None:
-            topk = probs.size(-1)
-        _, topk_ids = torch.topk(probs, k=topk, dim=-1, largest=True, sorted=True)
-        return probs, topk_ids
-
-    def ctc_forced_align(self, eouts, elens, ys):
-        """CTC-based forced alignment with references.
-
-        Args:
-            logits (FloatTensor): `[B, T, vocab]`
-            elens (List): length `B`
-            ys (List): length `B`, each of which contains a list of size `[L]`
-        Returns:
-            trigger_points (IntTensor): `[B, L]`
-
-        """
-        logits = self.ctc.output(eouts)
-        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
-        trigger_points = self.ctc.forced_align(logits, elens, ys, ylens)
-        return trigger_points

@@ -429,6 +429,19 @@ class Speech2Text(ModelBase):
         return eout_dict
 
     def get_ctc_probs(self, xs, task='ys', temperature=1, topk=None):
+        """Get CTC top-K probabilities.
+
+        Args:
+            xs (FloatTensor): `[B, T, idim]`
+            task (str): task to evaluate
+            temperature (float): softmax temperature
+            topk (int): top-K classes to sample
+        Returns:
+            probs (np.ndarray): `[B, T, vocab]`
+            topk_ids (np.ndarray): `[B, T, topk]`
+            elens (IntTensor): `[B]`
+
+        """
         self.eval()
         with torch.no_grad():
             eout_dict = self.encode(xs, task)
@@ -444,9 +457,13 @@ class Speech2Text(ModelBase):
                 assert self.ctc_weight_sub1 > 0
             elif task == 'ys_sub2':
                 assert self.ctc_weight_sub2 > 0
-            ctc_probs, indices_topk = getattr(self, 'dec_' + dir).ctc_probs_topk(
-                eout_dict[task]['xs'], temperature, topk)
-            return tensor2np(ctc_probs), tensor2np(indices_topk), eout_dict[task]['xlens']
+
+            probs = getattr(self, 'dec_' + dir).probs(eout_dict[task]['xs'])
+            if topk is None:
+                topk = probs.size(-1)  # return all classes
+            _, topk_ids = torch.topk(probs, k=topk, dim=-1, largest=True, sorted=True)
+
+            return tensor2np(probs), tensor2np(topk_ids), eout_dict[task]['xlens']
 
     def ctc_forced_align(self, xs, ys, task='ys'):
         """CTC-based forced alignment.
@@ -462,8 +479,11 @@ class Speech2Text(ModelBase):
         with torch.no_grad():
             eout_dict = self.encode(xs, 'ys')
             # NOTE: support the main task only
-            trigger_points = getattr(self, 'dec_fwd').ctc_forced_align(
-                eout_dict[task]['xs'], eout_dict[task]['xlens'], ys)
+            ctc = getattr(self, 'dec_fwd').ctc
+            logits = ctc.output(eout_dict[task]['xs'])
+            ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
+            trigger_points = ctc.forced_align(logits, eout_dict[task]['xlens'], ys, ylens)
+
         return tensor2np(trigger_points)
 
     def plot_attention(self):
@@ -533,6 +553,7 @@ class Speech2Text(ModelBase):
         # assert params['recog_length_norm']
         block_size = params.get('recog_block_sync_size')  # before subsampling
         cache_emb = params.get('recog_cache_embedding')
+        ctc_weight = params.get('recog_ctc_weight')
 
         streaming = Streaming(xs[0], params, self.enc)
         factor = self.enc.subsampling_factor
@@ -577,10 +598,10 @@ class Speech2Text(ModelBase):
             # CTC-based VAD
             if streaming.is_ctc_vad:
                 if self.ctc_weight_sub1 > 0:
-                    ctc_probs_block = self.dec_fwd_sub1.ctc_probs(eout_block_dict['ys_sub1']['xs'])
+                    ctc_probs_block = self.dec_fwd_sub1.ctc.probs(eout_block_dict['ys_sub1']['xs'])
                     # TODO: consider subsampling
                 else:
-                    ctc_probs_block = self.dec_fwd.ctc_probs(eout_block)
+                    ctc_probs_block = self.dec_fwd.ctc.probs(eout_block)
                 is_reset = streaming.ctc_vad(ctc_probs_block, stdout=stdout)
 
             # Truncate the most right frames
@@ -618,9 +639,10 @@ class Speech2Text(ModelBase):
                         is_reset = True
 
                 if len(best_hyp_id_prefix) > 0:
+                    n_frames = self.dec_fwd.ctc.n_frames if ctc_weight == 1 else self.dec_fwd.n_frames
                     print('\rStreaming (T:%d [10ms], offset:%d [10ms], blank:%d [10ms]): %s' %
                           (streaming.offset + eout_block.size(1) * factor,
-                           self.dec_fwd.n_frames * factor,
+                           n_frames * factor,
                            streaming.n_blanks * factor,
                            idx2token(best_hyp_id_prefix)))
 
@@ -699,10 +721,10 @@ class Speech2Text(ModelBase):
         with torch.no_grad():
             # Encode input features
             if params['recog_streaming_encoding']:
-                eout, elens = self.encode_streaming(xs, params, task)
+                eouts, elens = self.encode_streaming(xs, params, task)
             else:
                 eout_dict = self.encode(xs, task)
-                eout = eout_dict[task]['xs']
+                eouts = eout_dict[task]['xs']
                 elens = eout_dict[task]['xlens']
 
             # CTC
@@ -711,16 +733,20 @@ class Speech2Text(ModelBase):
                 lm_second = getattr(self, 'lm_second', None)
                 lm_second_bwd = None  # TODO
 
-                nbest_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
-                    eout, elens, params, idx2token,
-                    lm, lm_second, lm_second_bwd,
-                    params['recog_beam_width'], refs_id, utt_ids, speakers)
+                if params.get('recog_beam_width') == 1:
+                    nbest_hyps_id = getattr(self, 'dec_' + dir).ctc.greedy(
+                        eouts, elens)
+                else:
+                    nbest_hyps_id = getattr(self, 'dec_' + dir).ctc.beam_search(
+                        eouts, elens, params, idx2token,
+                        lm, lm_second, lm_second_bwd,
+                        1, refs_id, utt_ids, speakers)
                 return nbest_hyps_id, None
 
             # Attention/RNN-T
             elif params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
                 best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
-                    eout, elens, params['recog_max_len_ratio'], idx2token,
+                    eouts, elens, params['recog_max_len_ratio'], idx2token,
                     exclude_eos, refs_id, utt_ids, speakers)
                 nbest_hyps_id = [[hyp] for hyp in best_hyps_id]
             else:
@@ -728,7 +754,7 @@ class Speech2Text(ModelBase):
 
                 ctc_log_probs = None
                 if params['recog_ctc_weight'] > 0:
-                    ctc_log_probs = self.dec_fwd.ctc_log_probs(eout)
+                    ctc_log_probs = self.dec_fwd.ctc_log_probs(eouts)
 
                 # forward-backward decoding
                 if params['recog_fwd_bwd_attention']:
@@ -737,13 +763,13 @@ class Speech2Text(ModelBase):
 
                     # forward decoder
                     nbest_hyps_id_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
-                        eout, elens, params, idx2token,
+                        eouts, elens, params, idx2token,
                         lm, None, lm_bwd, ctc_log_probs,
                         params['recog_beam_width'], False, refs_id, utt_ids, speakers)
 
                     # backward decoder
                     nbest_hyps_id_bwd, aws_bwd, scores_bwd, _ = self.dec_bwd.beam_search(
-                        eout, elens, params, idx2token,
+                        eouts, elens, params, idx2token,
                         lm_bwd, None, lm, ctc_log_probs,
                         params['recog_beam_width'], False, refs_id, utt_ids, speakers)
 
@@ -771,7 +797,7 @@ class Speech2Text(ModelBase):
                     lm_bwd = getattr(self, 'lm_bwd' if dir == 'fwd' else 'lm_bwd', None)
 
                     nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
-                        eout, elens, params, idx2token,
+                        eouts, elens, params, idx2token,
                         lm, lm_second, lm_bwd, ctc_log_probs,
                         params['recog_beam_width'], exclude_eos, refs_id, utt_ids, speakers,
                         ensmbl_eouts, ensmbl_elens, ensmbl_decs)
