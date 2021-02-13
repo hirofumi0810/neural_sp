@@ -220,10 +220,12 @@ class CTC(DecoderBase):
     def initialize_beam(self, hyp, lmstate):
         """Initialize beam."""
         hyps = [{'hyp': hyp,
+                 'hyp_ids_str': '',
                  'p_b': LOG_1,
                  'p_nb': LOG_0,
                  'score_lm': LOG_1,
-                 'lmstate': lmstate}]
+                 'lmstate': lmstate,
+                 'update_lm': True}]
         return hyps
 
     def beam_search(self, eouts, elens, params, idx2token,
@@ -332,6 +334,7 @@ class CTC(DecoderBase):
     def _beam_search(self, hyps, helper, scores_ctc, lm, lp_weight):
         beam_width = helper.beam_width
         lm_weight = helper.lm_weight
+        merge_prob = True
 
         # scores_ctc: `[T, vocab]`
         for t in range(scores_ctc.size(0)):
@@ -341,7 +344,36 @@ class CTC(DecoderBase):
                 k=min(beam_width, self.vocab), dim=-1, largest=True, sorted=True)
             topk_ids += 1  # index:0 is for blank
 
-            # TODO: batchfy LM update here
+            # bachfy all hypotheses (not in the cache, non-blank) for LM
+            batch_hyps = [beam for beam in hyps if beam['update_lm']]
+            if len(batch_hyps) > 0:
+                ys = scores_ctc.new_zeros((len(batch_hyps), 1), dtype=torch.int64)
+                for i, beam in enumerate(batch_hyps):
+                    ys[i] = beam['hyp'][-1]
+
+                # Update LM states for shallow fusion
+                _, lmstates, scores_lm = helper.update_rnnlm_state_batch(lm, batch_hyps, ys)
+
+                hyp_ids_strs = [beam['hyp_ids_str'] for beam in hyps]
+
+                for i, beam in enumerate(batch_hyps):
+                    lmstate = {'hxs': lmstates['hxs'][:, i:i + 1],
+                               'cxs': lmstates['cxs'][:, i:i + 1]} if lmstates is not None else None
+                    index = hyp_ids_strs.index(beam['hyp_ids_str'])
+
+                    hyps[index]['lmstate'] = lmstate
+                    if lm is not None:
+                        hyps[index]['next_scores_lm'] = scores_lm[i:i + 1]
+                    else:
+                        hyps[index]['next_scores_lm'] = None
+                    assert hyps[index]['update_lm']
+                    hyps[index]['update_lm'] = False
+
+                    # register to cache
+                    self.state_cache[beam['hyp_ids_str']] = {
+                        'next_scores_lm': hyps[index]['next_scores_lm'],
+                        'lmstate': lmstate,
+                    }
 
             new_hyps = []
             for j, beam in enumerate(hyps):
@@ -360,21 +392,16 @@ class CTC(DecoderBase):
                 total_score_lp = len(beam['hyp'][1:]) * lp_weight
                 total_score = total_score_ctc + total_score_lp + total_score_lm * lm_weight
                 new_hyps.append({'hyp': beam['hyp'][:],
+                                 'hyp_ids_str': beam['hyp_ids_str'],
                                  'score': total_score,
                                  'p_b': new_p_b,
                                  'p_nb': new_p_nb,
                                  'score_ctc': total_score_ctc,
                                  'score_lm': total_score_lm,
                                  'score_lp': total_score_lp,
-                                 'lmstate': beam['lmstate']})
-
-                # Update LM states for shallow fusion
-                if lm is not None:
-                    _, lmstate, scores_lm = lm.predict(
-                        scores_ctc.new_zeros(1, 1, dtype=torch.int64).fill_(beam['hyp'][-1]),
-                        beam['lmstate'])
-                else:
-                    lmstate = None
+                                 'next_scores_lm': beam['next_scores_lm'],
+                                 'lmstate': beam['lmstate'],
+                                 'update_lm': False})
 
                 # case 2. hyp is extended
                 new_p_b = LOG_0
@@ -397,19 +424,36 @@ class CTC(DecoderBase):
                     total_score_lp = (len(beam['hyp'][1:]) + 1) * lp_weight
                     total_score = total_score_ctc + total_score_lp
                     if lm is not None:
-                        total_score_lm += scores_lm[0, 0, idx].item()
+                        total_score_lm += beam['next_scores_lm'][0, 0, idx].item()
                     total_score += total_score_lm * lm_weight
-                    new_hyps.append({'hyp': beam['hyp'] + [idx],
+
+                    hyp_ids = beam['hyp'] + [idx]
+                    hyp_ids_str = ' '.join(list(map(str, hyp_ids)))
+                    exist_cache = hyp_ids_str in self.state_cache.keys()
+                    if exist_cache:
+                        # from cache
+                        scores_lm = self.state_cache[hyp_ids_str]['next_scores_lm']
+                        lmstate = self.state_cache[hyp_ids_str]['lmstate']
+                    else:
+                        # LM will be updated later
+                        scores_lm = None
+                        lmstate = beam['lmstate']
+
+                    new_hyps.append({'hyp': hyp_ids,
+                                     'hyp_ids_str': hyp_ids_str,
                                      'score': total_score,
                                      'p_b': new_p_b,
                                      'p_nb': new_p_nb,
                                      'score_ctc': total_score_ctc,
                                      'score_lm': total_score_lm,
                                      'score_lp': total_score_lp,
-                                     'lmstate': lmstate})
+                                     'next_scores_lm': scores_lm,
+                                     'lmstate': lmstate,
+                                     'update_lm': not exist_cache})
 
             # Pruning
             new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)
+            new_hyps_sorted = helper.merge_ctc_path(new_hyps_sorted, merge_prob)
             hyps = new_hyps_sorted[:beam_width]
 
         return hyps, new_hyps_sorted
