@@ -51,24 +51,23 @@ class DecoderBase(ModelBase):
 
     def _plot_attention(self, save_path=None, n_cols=2):
         """Plot attention for each head in all decoder layers."""
-        if not hasattr(self, 'aws_dict'):
-            return
-        if len(self.aws_dict.keys()) == 0:
+        if len(getattr(self, 'aws_dict', {}).keys()) == 0:
             return
 
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
+
+        elens = self.data_dict['elens']
+        ylens = self.data_dict['ylens']
+        # ys = self.data_dict['ys']
+        aws_dict = self.aws_dict
 
         # Clean directory
         if save_path is not None and os.path.isdir(save_path):
             shutil.rmtree(save_path)
             os.mkdir(save_path)
 
-        elens = self.data_dict['elens']
-        ylens = self.data_dict['ylens']
-        # ys = self.data_dict['ys']
-
-        for k, aw in self.aws_dict.items():
+        for k, aw in aws_dict.items():
             if aw is None:
                 continue
 
@@ -102,15 +101,15 @@ class DecoderBase(ModelBase):
         """Plot CTC posterior probabilities."""
         if self.ctc_weight == 0:
             return
+        if len(self.ctc.prob_dict.keys()) == 0:
+            return
+
         from matplotlib import pyplot as plt
 
         # Clean directory
         if save_path is not None and os.path.isdir(save_path):
             shutil.rmtree(save_path)
             os.mkdir(save_path)
-
-        if len(self.ctc.prob_dict.keys()) == 0:
-            return
 
         elen = self.ctc.data_dict['elens'][-1]
         probs = self.ctc.prob_dict['probs'][-1, :elen]  # `[T, vocab]`
