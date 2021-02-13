@@ -147,45 +147,20 @@ class TransformerLM(LMBase):
             nn.init.constant_(self.output.bias, 0.)
             # nn.init.normal_(self.embed.weight, mean=0., std=self.d_model**-0.5)
 
-    def init_memory(self):
-        """Initialize memory."""
-        return [torch.empty(0, dtype=torch.float).to(self.device)
-                for _ in range(self.n_layers)]
-
-    def update_memory(self, memory_prev, hidden_states):
-        """Update memory.
+    def embed_token_id(self, indices):
+        """Embed token IDs.
 
         Args:
-            memory_prev (List): length `n_layers`, each of which contains `[B, mlen, d_model]`
-            hidden_states (List): length `n_layers`, each of which contains `[B, L, d_model]`
+            indices (LongTensor): `[B]`
         Returns:
-            new_mems (List): length `n_layers`, each of which contains `[B, mlen, d_model]`
+            ys_emb (FloatTensor): `[B, vocab, emb_dim]`
 
         """
-        if memory_prev is None:
-            memory_prev = self.init_memory()  # 0-th to L-1-th layer
-        assert len(hidden_states) == len(memory_prev)
-        mlen = memory_prev[0].size(1) if memory_prev[0].dim() > 1 else 0
-        qlen = hidden_states[0].size(1)
-
-        # There are `mlen + qlen` steps that can be cached into mems
-        # For the next step, the last `ext_len` of the `qlen` tokens
-        # will be used as the extended context. Hence, we only cache
-        # the tokens from `mlen + qlen - self.ext_len - self.mem_len`
-        # to `mlen + qlen - self.ext_len`.
-        with torch.no_grad():
-            new_mems = []
-            end_idx = mlen + qlen
-            start_idx = max(0, end_idx - self.mem_len)
-            for m, h in zip(memory_prev, hidden_states):
-                cat = torch.cat([m, h], dim=1)  # `[B, mlen + qlen, d_model]`
-                new_mems.append(cat[:, start_idx:end_idx].detach())  # `[B, self.mem_len, d_model]`
-        return new_mems
-
-    def cache_embedding(self, device):
-        if self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
-            self.embed_cache = self.embed(indices)  # `[1, vocab, emb_dim]`
+        if self.embed_cache is None or self.training:
+            ys_emb = self.embed(indices)
+        else:
+            ys_emb = self.embed_cache[indices]
+        return ys_emb
 
     def decode(self, ys, state=None, mems=None, cache=None, incremental=False):
         """Decode function.
@@ -193,46 +168,44 @@ class TransformerLM(LMBase):
         Args:
             ys (LongTensor): `[B, L]`
             state (List): dummy interfance for RNNLM
-            mems (List): length `n_layers`, each of which contains a FloatTensor `[B, mlen, d_model]`
-            cache (List): length `L`, each of which contains a FloatTensor `[B, L-1, d_model]`
+            mems (List): length `n_layers` (inter-utterance),
+                each of which contains a FloatTensor of size `[B, mlen, d_model]`
+            cache (List): length `n_layers` (intra-utterance),
+                each of which contains a FloatTensor of size `[B, L-1, d_model]`
             incremental (bool): ASR decoding mode
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]`
-            new_cache (List): length `n_layers`, each of which contains a FloatTensor `[B, L, d_model]`
+            new_cache (List): length `n_layers`,
+                each of which contains a FloatTensor of size `[B, L, d_model]`
 
         """
         # for ASR decoding
         if cache is None:
             cache = [None] * self.n_layers  # 1-th to L-th layer
 
-        if mems is None:
-            mems = self.init_memory()
+        bs, ylen = ys.size()[:2]
+        n_hist = 0
+        if incremental and cache[0] is not None:
+            n_hist = cache[0].size(1)
+            ylen += n_hist
 
         # Create the self-attention mask
-        bs, ylen = ys.size()[:2]
-        if incremental and cache[0] is not None:
-            ylen = cache[0].size(1) + 1
         causal_mask = ys.new_ones(ylen, ylen).byte()
-        causal_mask = torch.tril(causal_mask, diagonal=0, out=causal_mask).unsqueeze(0)
-        causal_mask = causal_mask.repeat([bs, 1, 1])
+        causal_mask = torch.tril(causal_mask).unsqueeze(0)
+        causal_mask = causal_mask.repeat([bs, 1, 1])  # `[B, L, L]`
 
-        if self.embed_cache is not None:
-            out = self.embed_cache[ys]
-        else:
-            out = self.embed(ys.long())
-        out = self.pos_enc(out, scale=True)  # scaled + dropout
+        out = self.pos_enc(self.embed_token_id(ys), scale=True, offset=max(0, n_hist))  # scaled + dropout
 
-        new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
         hidden_states = [out]
-        for lth, (mem, layer) in enumerate(zip(mems, self.layers)):
-            out = layer(out, causal_mask, cache=cache[lth], memory=mem)
+        for lth, layer in enumerate(self.layers):
+            out = layer(out, causal_mask, cache=cache[lth])
             if incremental:
                 new_cache[lth] = out
             elif lth < self.n_layers - 1:
                 hidden_states.append(out)
-                # NOTE: outputs from the last layer is not used for memory
+                # NOTE: outputs from the last layer is not used for cache
             if not self.training and layer.yy_aws is not None:
                 setattr(self, 'yy_aws_layer%d' % lth, tensor2np(layer.yy_aws))
         out = self.norm_out(out)
@@ -241,15 +214,7 @@ class TransformerLM(LMBase):
         else:
             logits = out
 
-        if incremental:
-            # NOTE: do not update memory here during ASR decoding
-            return logits, out, new_cache
-        elif self.mem_len > 0:
-            # Update memory
-            new_mems = self.update_memory(mems, hidden_states)
-            return logits, out, new_mems
-        else:
-            return logits, out, mems
+        return logits, out, new_cache
 
     def plot_attention(self, n_cols=4):
         """Plot attention for each head in all layers."""

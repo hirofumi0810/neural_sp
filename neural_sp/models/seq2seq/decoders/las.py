@@ -563,7 +563,7 @@ class RNNDecoder(DecoderBase):
         aw = None
         lmout, lmstate = None, None
 
-        ys_emb = self.dropout_emb(self.embed(ys_in))
+        ys_emb = self.embed_token_id(ys_in)
         src_mask = make_pad_mask(elens_expand.to(eouts.device)).unsqueeze(1)  # `[B * nbest, 1, T]`
         logits = []
         for i in range(ys_in.size(1)):
@@ -651,7 +651,7 @@ class RNNDecoder(DecoderBase):
         betas, p_chooses = [], []
         lmout, lmstate = None, None
 
-        ys_emb = self.dropout_emb(self.embed(ys_in))
+        ys_emb = self.embed_token_id(ys_in)
         src_mask = make_pad_mask(elens.to(device)).unsqueeze(1)  # `[B, 1, T]`
         tgt_mask = (ys_out != self.pad).unsqueeze(2)  # `[B, L, 1]`
         logits = []
@@ -666,8 +666,8 @@ class RNNDecoder(DecoderBase):
                     lmout, lmstate, _ = self.lm.predict(y_lm, lmstate)
 
             # Recurrency -> Score -> Generate
-            y_emb = self.dropout_emb(self.embed(
-                self.output(logits[-1]).detach().argmax(-1))) if is_sample else ys_emb[:, i:i + 1]
+            y_emb = self.embed_token_id(
+                self.output(logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, i:i + 1]
             dstates, cv, aw, attn_state, attn_v = self.decode_step(
                 eouts, dstates, cv, y_emb, src_mask, aw, lmout, mode='parallel',
                 trigger_points=forced_trigger_points[:, i:i + 1] if forced_trigger_points is not None else None)
@@ -925,9 +925,8 @@ class RNNDecoder(DecoderBase):
                 lmout, lmstate, _ = self.lm.predict(y, lmstate)
 
             # Recurrency -> Score -> Generate
-            y_emb = self.dropout_emb(self.embed(y))
             dstates, cv, aw, attn_state, attn_v = self.decode_step(
-                eouts, dstates, cv, y_emb, src_mask, aw, lmout,
+                eouts, dstates, cv, self.embed_token_id(y), src_mask, aw, lmout,
                 trigger_points=trigger_points[:, i:i + 1] if trigger_points is not None else None)
             aws_batch += [aw]  # `[B, H, 1, T]`
             if self.attn_type in ['gmm', 'sagmm']:
@@ -1005,11 +1004,25 @@ class RNNDecoder(DecoderBase):
 
         return hyps, aws
 
+    def embed_token_id(self, indices):
+        """Embed token IDs.
+        Args:
+            indices (LongTensor): `[B]`
+        Returns:
+            ys_emb (FloatTensor): `[B, vocab, emb_dim]`
+
+        """
+        if self.embed_cache is None or self.training:
+            ys_emb = self.dropout_emb(self.embed(indices))
+        else:
+            ys_emb = self.embed_cache[indices]
+        return ys_emb
+
     def cache_embedding(self, device):
         """Cache token emebdding."""
         if self.embed_cache is None:
             indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
-            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
+            self.embed_cache = self.embed_token_id(indices)
 
     def initialize_beam(self, hyp, dstates, cv, lmstate, ctc_state,
                         ensmbl_decs=[]):
@@ -1180,7 +1193,7 @@ class RNNDecoder(DecoderBase):
                         lmout, lmstate, scores_lm = lm.predict(y, lmstate)
 
                 # for the main model
-                y_emb = self.dropout_emb(self.embed(y)) if self.embed_cache is None else self.embed_cache[y]
+                y_emb = self.embed_token_id(y)
                 dstates, cv, aw, attn_state, attn_v = self.decode_step(
                     eouts_b_i, dstates, cv, y_emb, None, aw, lmout)
                 probs = torch.softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)
@@ -1197,7 +1210,7 @@ class RNNDecoder(DecoderBase):
 
                     dstates_e, cv_e, aw_e, attn_state_e, attn_v_e = dec.decode_step(
                         ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]].repeat([cv_e.size(0), 1, 1]),
-                        dstates_e, cv_e, dec.dropout_emb(dec.embed(y)), None, aw_e, lmout)
+                        dstates_e, cv_e, dec.embed_token_id(y), None, aw_e, lmout)
 
                     ensmbl_dstate += [{'dstate': (dstates_e['dstate'][0][:, j:j + 1],
                                                   dstates_e['dstate'][1][:, j:j + 1])}]
@@ -1508,7 +1521,7 @@ class RNNDecoder(DecoderBase):
             lmout, lmstate, scores_lm = helper.update_rnnlm_state_batch(
                 self.lm if self.lm is not None else lm, hyps, y)
 
-            y_emb = self.dropout_emb(self.embed(y)) if self.embed_cache is None else self.embed_cache[y]
+            y_emb = self.embed_token_id(y)
             dstates, cv, aw, _, attn_v = self.decode_step(
                 eouts[0:1], dstates, cv, y_emb, None, aw, lmout, streaming=True)
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)

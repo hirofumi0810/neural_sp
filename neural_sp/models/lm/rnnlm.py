@@ -144,10 +144,20 @@ class RNNLM(LMBase):
             else:
                 raise ValueError(n)
 
-    def cache_embedding(self, device):
-        if self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
-            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
+    def embed_token_id(self, indices):
+        """Embed token IDs.
+
+        Args:
+            indices (LongTensor): `[B]`
+        Returns:
+            ys_emb (FloatTensor): `[B, vocab, emb_dim]`
+
+        """
+        if self.embed_cache is None or self.training:
+            ys_emb = self.dropout_emb(self.embed(indices))
+        else:
+            ys_emb = self.embed_cache[indices]
+        return ys_emb
 
     def decode(self, ys, state, mems=None, cache=None, incremental=False):
         """Decode function.
@@ -171,10 +181,7 @@ class RNNLM(LMBase):
         """
         bs, ymax = ys.size()
 
-        if self.embed_cache is not None:
-            ys_emb = self.embed_cache[ys]
-        else:
-            ys_emb = self.dropout_emb(self.embed(ys))
+        ys_emb = self.embed_token_id(ys)
 
         if state is None:
             state = self.zero_state(bs)

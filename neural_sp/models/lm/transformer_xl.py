@@ -157,15 +157,18 @@ class TransformerXL(LMBase):
         """Update memory.
 
         Args:
-            memory_prev (List): length `n_layers`, each of which contains `[B, mlen, d_model]`
-            hidden_states (List): length `n_layers`, each of which contains `[B, L, d_model]`
+            memory_prev (List): length `n_layers` (inter-utterance),
+                each of which contains a FloatTensor of size `[B, mlen, d_model]`
+            hidden_states (List): length `n_layers` (intra-utterance),
+                each of which contains a FloatTensor of size `[B, L, d_model]`
         Returns:
-            new_mems (List): length `n_layers`, each of which contains `[B, mlen, d_model]`
+            new_mems (List): length `n_layers`,
+                each of which contains a FloatTensor of size `[B, mlen, d_model]`
 
         """
         if memory_prev is None:
             memory_prev = self.init_memory()  # 0-th to L-1-th layer
-        assert len(hidden_states) == len(memory_prev)
+        assert len(hidden_states) == len(memory_prev), (len(hidden_states), len(memory_prev))
         mlen = memory_prev[0].size(1) if memory_prev[0].dim() > 1 else 0
         qlen = hidden_states[0].size(1)
 
@@ -184,10 +187,20 @@ class TransformerXL(LMBase):
 
         return new_mems
 
-    def cache_embedding(self, device):
-        if self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
-            self.embed_cache = self.dropout_emb(self.embed(indices) * self.scale)  # `[1, vocab, emb_dim]`
+    def embed_token_id(self, indices):
+        """Embed token IDs.
+
+        Args:
+            indices (LongTensor): `[B]`
+        Returns:
+            ys_emb (FloatTensor): `[B, vocab, emb_dim]`
+
+        """
+        if self.embed_cache is None or self.training:
+            ys_emb = self.dropout_emb(self.embed(indices) * self.scale)
+        else:
+            ys_emb = self.embed_cache[indices]
+        return ys_emb
 
     def decode(self, ys, state=None, mems=None, cache=None, incremental=False):
         """Decode function.
@@ -195,13 +208,16 @@ class TransformerXL(LMBase):
         Args:
             ys (LongTensor): `[B, L]`
             state (List): dummy interfance for RNNLM
-            mems (List): length `n_layers`, each of which contains a FloatTensor `[B, mlen, d_model]`
-            cache (List): length `L`, each of which contains a FloatTensor `[B, L-1, d_model]`
+            mems (List): length `n_layers` (inter-utterance),
+                each of which contains a FloatTensor of size `[B, mlen, d_model]`
+            cache (List): length `n_layers` (intra-utterance),
+                each of which contains a FloatTensor of size `[B, L-1, d_model]`
             incremental (bool): ASR decoding mode
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]`
-            new_cache (List): length `n_layers`, each of which contains a FloatTensor `[B, L, d_model]`
+            new_cache (List): length `n_layers`,
+                each of which contains a FloatTensor of size `[B, L, d_model]`
 
         """
         # for ASR decoding
@@ -220,15 +236,11 @@ class TransformerXL(LMBase):
 
         # Create the self-attention mask
         causal_mask = ys.new_ones(ylen, ylen + mlen).byte()
-        causal_mask = torch.tril(causal_mask, diagonal=0 + mlen, out=causal_mask).unsqueeze(0)
+        causal_mask = torch.tril(causal_mask, diagonal=mlen).unsqueeze(0)
         causal_mask = causal_mask.repeat([bs, 1, 1])  # `[B, L, L+mlen]`
 
-        if self.embed_cache is not None:
-            out = self.embed_cache[ys]
-        else:
-            out = self.dropout_emb(self.embed(ys.long()) * self.scale)
-
-        pos_embs = self.pos_emb(ys, mlen=mlen)
+        out = self.embed_token_id(ys)
+        rel_pos_embs = self.pos_emb(ys, mlen=mlen)
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
@@ -237,7 +249,7 @@ class TransformerXL(LMBase):
             if incremental and mlen > 0 and mem.size(0) != bs:
                 mem = mem.repeat([bs, 1, 1])
             out = layer(out, causal_mask, cache=cache[lth],
-                        pos_embs=pos_embs, memory=mem, u_bias=self.u_bias, v_bias=self.v_bias)
+                        pos_embs=rel_pos_embs, memory=mem, u_bias=self.u_bias, v_bias=self.v_bias)
             if incremental:
                 new_cache[lth] = out
             elif lth < self.n_layers - 1:
