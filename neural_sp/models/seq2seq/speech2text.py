@@ -752,9 +752,9 @@ class Speech2Text(ModelBase):
             else:
                 assert params['recog_batch_size'] == 1
 
-                ctc_log_probs = None
+                scores_ctc = None
                 if params['recog_ctc_weight'] > 0:
-                    ctc_log_probs = self.dec_fwd.ctc_log_probs(eouts)
+                    scores_ctc = self.dec_fwd.ctc.scores(eouts)
 
                 # forward-backward decoding
                 if params['recog_fwd_bwd_attention']:
@@ -764,13 +764,13 @@ class Speech2Text(ModelBase):
                     # forward decoder
                     nbest_hyps_id_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                         eouts, elens, params, idx2token,
-                        lm, None, lm_bwd, ctc_log_probs,
+                        lm, None, lm_bwd, scores_ctc,
                         params['recog_beam_width'], False, refs_id, utt_ids, speakers)
 
                     # backward decoder
                     nbest_hyps_id_bwd, aws_bwd, scores_bwd, _ = self.dec_bwd.beam_search(
                         eouts, elens, params, idx2token,
-                        lm_bwd, None, lm, ctc_log_probs,
+                        lm_bwd, None, lm, scores_ctc,
                         params['recog_beam_width'], False, refs_id, utt_ids, speakers)
 
                     # forward-backward attention
@@ -798,7 +798,7 @@ class Speech2Text(ModelBase):
 
                     nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
                         eouts, elens, params, idx2token,
-                        lm, lm_second, lm_bwd, ctc_log_probs,
+                        lm, lm_second, lm_bwd, scores_ctc,
                         params['recog_beam_width'], exclude_eos, refs_id, utt_ids, speakers,
                         ensmbl_eouts, ensmbl_elens, ensmbl_decs)
 
