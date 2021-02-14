@@ -422,7 +422,7 @@ class TransformerDecoder(DecoderBase):
                 lmout, lmstate, _ = self.lm.predict(ys_in, None)
             lmout = self.lm_output_proj(lmout)
 
-        out = self.pos_enc(self.embed(ys_in))  # scaled + dropout
+        out = self.pos_enc(self.embed_token_id(ys_in), scale=True)  # scaled + dropout
 
         xy_aws_layers = []
         xy_aws = None
@@ -501,7 +501,7 @@ class TransformerDecoder(DecoderBase):
 
             new_cache = [None] * self.n_layers
             xy_aws_layers = []
-            out = self.pos_enc(self.embed(ys))  # scaled + dropout
+            out = self.pos_enc(self.embed_token_id(ys), scale=True)  # scaled + dropout
             for lth, layer in enumerate(self.layers):
                 out = layer(out, causal_mask, eouts, None, cache=cache[lth])
                 new_cache[lth] = out
@@ -571,11 +571,25 @@ class TransformerDecoder(DecoderBase):
 
         return hyps, aws
 
+    def embed_token_id(self, indices):
+        """Embed token IDs.
+        Args:
+            indices (LongTensor): `[B]`
+        Returns:
+            ys_emb (FloatTensor): `[B, vocab, emb_dim]`
+
+        """
+        if self.embed_cache is None or self.training:
+            ys_emb = self.embed(indices)
+        else:
+            ys_emb = self.embed_cache[indices]
+        return ys_emb
+
     def cache_embedding(self, device):
         """Cache token emebdding."""
         if self.embed_cache is None:
             indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
-            self.embed_cache = self.embed(indices)  # `[1, vocab, emb_dim]`
+            self.embed_cache = self.embed_token_id(indices)
 
     def beam_search(self, eouts, elens, params, idx2token=None,
                     lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
@@ -704,11 +718,7 @@ class TransformerDecoder(DecoderBase):
                     causal_mask = causal_mask.byte()
                 causal_mask = torch.tril(causal_mask).unsqueeze(0).repeat([ys.size(0), 1, 1])
 
-                if self.embed_cache is not None:
-                    ys_emb = self.embed_cache[ys]
-                else:
-                    ys_emb = self.embed(ys)
-                out = self.pos_enc(ys_emb, scale=True)  # scaled + dropout
+                out = self.pos_enc(self.embed_token_id(ys), scale=True)  # scaled + dropout
 
                 n_heads_total = 0
                 eouts_b = eouts[b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])

@@ -131,8 +131,14 @@ class LMBase(ModelBase):
     def decode(self, ys, state=None, mems=None, incremental=False):
         raise NotImplementedError
 
-    def cache_embedding(self, device):
+    def embed_token_id(self, indices):
         raise NotImplementedError
+
+    def cache_embedding(self, device):
+        """Cache token emebdding."""
+        if self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
+            self.embed_cache = self.embed_token_id(indices)
 
     def predict(self, ys, state=None, mems=None, cache=None):
         """Precict function for ASR.

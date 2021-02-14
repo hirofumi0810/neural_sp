@@ -5,8 +5,8 @@
 
 from collections import OrderedDict
 import logging
-import torch.nn as nn
 import torch
+import torch.nn as nn
 
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.glu import ConvGLUBlock
@@ -187,10 +187,20 @@ class GatedConvLM(LMBase):
             else:
                 raise ValueError(n)
 
-    def cache_embedding(self, device):
-        if self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
-            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
+    def embed_token_id(self, indices):
+        """Embed token IDs.
+
+        Args:
+            indices (LongTensor): `[B]`
+        Returns:
+            ys_emb (FloatTensor): `[B, vocab, emb_dim]`
+
+        """
+        if self.embed_cache is None or self.training:
+            ys_emb = self.dropout_emb(self.embed(indices))
+        else:
+            ys_emb = self.embed_cache[indices]
+        return ys_emb
 
     def decode(self, ys, state=None, mems=None, incremental=False):
         """Decode function.
@@ -207,10 +217,7 @@ class GatedConvLM(LMBase):
             new_mems: dummy interfance for TransformerXL
 
         """
-        if self.embed_cache is not None:
-            out = self.embed_cache[ys]
-        else:
-            out = self.dropout_emb(self.embed(ys.long()))
+        out = self.embed_token_id(ys)
 
         bs, max_ylen = out.size()[:2]
 
