@@ -544,20 +544,22 @@ class Speech2Text(ModelBase):
 
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
         """Simulate streaming encoding+decoding. Both encoding and decoding are performed in the online mode."""
-        assert task == 'ys'
-        assert self.input_type == 'speech'
-        assert self.ctc_weight > 0
-        assert self.fwd_weight > 0
-        assert len(xs) == 1  # batch size
-        assert params.get('recog_block_sync')
-        # assert params['recog_length_norm']
         block_size = params.get('recog_block_sync_size')  # before subsampling
         cache_emb = params.get('recog_cache_embedding')
         ctc_weight = params.get('recog_ctc_weight')
 
+        assert task == 'ys'
+        assert self.input_type == 'speech'
+        assert self.ctc_weight > 0
+        assert self.fwd_weight > 0 or self.ctc_weight == 1.0
+        assert len(xs) == 1  # batch size
+        assert params.get('recog_block_sync')
+        # assert params.get('recog_length_norm')
+
         streaming = Streaming(xs[0], params, self.enc)
         factor = self.enc.subsampling_factor
         block_size //= factor
+        assert block_size >= 1, "block_size is too small."
 
         hyps = None
         best_hyp_id_stream = []
@@ -579,7 +581,7 @@ class Speech2Text(ModelBase):
         lm_second = helper.verify_lm_eval_mode(lm_second, params.get('recog_lm_second_weight'), cache_emb)
 
         # cache token embeddings
-        if cache_emb:
+        if cache_emb and self.fwd_weight > 0:
             self.dec_fwd.cache_embedding(self.device)
 
         while True:
@@ -610,8 +612,9 @@ class Speech2Text(ModelBase):
             streaming.cache_eout(eout_block)
 
             # Block-synchronous decoding
-            if ctc_weight == 1:
-                raise NotImplementedError
+            if ctc_weight == 1 or self.ctc_weight == 1:
+                end_hyps, hyps = self.dec_fwd.ctc.beam_search_block_sync(
+                    eout_block, params, helper, idx2token, hyps, lm)
             elif isinstance(self.dec_fwd, RNNT):
                 raise NotImplementedError
             elif isinstance(self.dec_fwd, RNNDecoder):
@@ -639,7 +642,7 @@ class Speech2Text(ModelBase):
                         is_reset = True
 
                 if len(best_hyp_id_prefix) > 0:
-                    n_frames = self.dec_fwd.ctc.n_frames if ctc_weight == 1 else self.dec_fwd.n_frames
+                    n_frames = self.dec_fwd.ctc.n_frames if ctc_weight == 1 or self.ctc_weight == 1 else self.dec_fwd.n_frames
                     print('\rStreaming (T:%d [10ms], offset:%d [10ms], blank:%d [10ms]): %s' %
                           (streaming.offset + eout_block.size(1) * factor,
                            n_frames * factor,

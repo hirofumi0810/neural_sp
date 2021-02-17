@@ -480,6 +480,56 @@ class CTC(DecoderBase):
 
         return hyps, new_hyps_sorted
 
+    def beam_search_block_sync(self, eouts, params, helper, idx2token,
+                               hyps, lm, state_carry_over=False):
+        assert eouts.size(0) == 1
+
+        beam_width = params.get('recog_beam_width')
+        lp_weight = params.get('recog_length_penalty')
+        lm_weight = params.get('recog_lm_weight')
+        softmax_smoothing = params.get('recog_softmax_smoothing')
+
+        end_hyps = []
+        if hyps is None:
+            # Initialization per utterance
+            lmstate = {'hxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units),
+                       'cxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units)} if lm is not None else None
+
+            if state_carry_over:
+                lmstate = self.lmstate_final
+
+            self.n_frames = 0
+            self.chunk_size = eouts.size(1)
+            hyps = self.initialize_beam([self.eos], lmstate)
+            self.state_cache = OrderedDict()
+
+        log_probs = torch.log_softmax(self.output(eouts) * softmax_smoothing, dim=-1)
+        hyps, new_hyps_sorted = self._beam_search(hyps, helper, log_probs[0], lm,
+                                                  lp_weight)
+
+        # merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'] / len(x['hyp']), reverse=True)[:beam_width]
+        merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+        if idx2token is not None:
+            logger.info('=' * 200)
+            for k in range(len(merged_hyps)):
+                logger.info('Hyp: %s' % idx2token(merged_hyps[k]['hyp'][1:]))
+                if len(merged_hyps[k]['hyp']) > 1:
+                    logger.info('num tokens (hyp): %d' % len(merged_hyps[k]['hyp'][1:]))
+                logger.info('log prob (hyp): %.7f' % merged_hyps[k]['score'])
+                logger.info('log prob (hyp, ctc): %.7f' % merged_hyps[k]['score_ctc'])
+                if lm is not None:
+                    logger.info('log prob (hyp, first-pass lm): %.7f' %
+                                (merged_hyps[k]['score_lm'] * lm_weight))
+                logger.info('-' * 50)
+
+        # Store LM state
+        if len(end_hyps) > 0:
+            self.lmstate_final = end_hyps[0]['lmstate']
+
+        self.n_frames += eouts.size(1)
+
+        return end_hyps, hyps
+
 
 def _label_to_path(labels, blank):
     path = labels.new_zeros(labels.size(0), labels.size(1) * 2 + 1).fill_(blank).long()
