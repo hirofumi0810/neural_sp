@@ -25,11 +25,15 @@ ln -sf ${root}/coverage.xml .
 # ./run.sh --stage 0 --conf conf/asr/blstm_las.yaml --unit phone || exit 1;
 
 # Architecture
-./run.sh --stage 4 --conf conf/asr/blstm_ctc.yaml || exit 1;
-./score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1 || exit 1;
-./plot_ctc.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1 || exit 1;
-./run.sh --stage 4 --conf conf/asr/blstm_transducer.yaml || exit 1;
-./score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_lstm_transducer16H8P1L_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
+### CTC
+./run.sh --stage 4 --conf conf/asr/lstm_ctc.yaml || exit 1;
+./score.sh --model results/asr/train_char/conv2Llstm16H8P1L_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1 || exit 1;
+./score.sh --block_sync true --block_size 8 --model results/asr/train_char/conv2Llstm16H8P1L_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1
+./plot_ctc.sh --model results/asr/train_char/conv2Llstm16H8P1L_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1 || exit 1;
+### RNN-T
+./run.sh --stage 4 --conf conf/asr/lcblstm_transducer.yaml || exit 1;
+./score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL40R40_drop4_lstm_transducer16H8P1L_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
+### Transformer
 ./run.sh --stage 4 --conf conf/asr/transformer.yaml || exit 1;
 ./score.sh --model results/asr/train_char/conv2Ltransformer8dmodel32dff1L4Hpenone_max_pool4_transformer8dmodel32dff1L4Hpe1dconv3Lscaled_dot_noam_lr5.0_bs1_ls0.1_warmup2_accum2_ctc0.3/model.epoch-2 || exit 1;
 ./run.sh --stage 4 --conf conf/asr/transformer_ctc.yaml || exit 1;

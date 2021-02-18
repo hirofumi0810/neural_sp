@@ -27,8 +27,8 @@ ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 lm_state_carry_over=true
 n_average=2  # for Transformer
 oracle=false
-block_sync=false  # for MoChA
-block_size=40  # for MoChA
+block_sync=false
+block_size=40
 mma_delay_threshold=-1
 
 . ./cmd.sh
