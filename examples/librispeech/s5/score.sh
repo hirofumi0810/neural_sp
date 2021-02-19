@@ -42,9 +42,11 @@ asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=10  # for Transformer
 oracle=false
-block_sync=false  # for MoChA
-block_size=40  # for MoChA
-mma_delay_threshold=-1
+streaming_encoding=false
+block_sync=false
+block_size=40
+mma_delay_threshold=-1  # for MMA
+rnnt_beam_search_type=time_sync  # RNN-T
 
 . ./cmd.sh
 . ./path.sh
@@ -102,6 +104,9 @@ for set in dev_clean dev_other test_clean test_other; do
     fi
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
+    fi
+    if [ ${streaming_encoding} = true ]; then
+        recog_dir=${recog_dir}_streaming_encoding${block_size}
     fi
     if [ ${block_sync} = true ]; then
         recog_dir=${recog_dir}_blocksync${block_size}
@@ -176,12 +181,16 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_streaming_encoding ${streaming_encoding} \
         --recog_block_sync ${block_sync} \
         --recog_block_sync_size ${block_size} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_mma_delay_threshold ${mma_delay_threshold} \
+        --recog_rnnt_beam_search_type ${rnnt_beam_search_type} \
         --recog_stdout ${stdout} || exit 1;
+
+    grep RTF ${recog_dir}/decode.log
 
     if [ ${metric} = 'edit_distance' ]; then
         # remove <unk>

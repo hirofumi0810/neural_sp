@@ -34,6 +34,7 @@ lm_bwd=
 lm_weight=0.3
 lm_second_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
+softmax_smoothing=1.0
 resolving_unk=false
 fwd_bwd_attention=false
 bwd_attention=false
@@ -42,9 +43,11 @@ asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=10  # for Transformer
 oracle=false
-block_sync=false  # for MoChA
-block_size=40  # for MoChA
-mma_delay_threshold=-1
+streaming_encoding=false
+block_sync=false
+block_size=40
+mma_delay_threshold=-1  # for MMA
+rnnt_beam_search_type=time_sync  # RNN-T
 
 . ./cmd.sh
 . ./path.sh
@@ -85,6 +88,9 @@ for set in dev eval; do
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
     fi
+    if [ ${softmax_smoothing} != 1.0 ]; then
+        recog_dir=${recog_dir}_smooth${softmax_smoothing}
+    fi
     if [ ${gnmt_decoding} = true ]; then
         recog_dir=${recog_dir}_gnmt
     fi
@@ -102,6 +108,9 @@ for set in dev eval; do
     fi
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
+    fi
+    if [ ${streaming_encoding} = true ]; then
+        recog_dir=${recog_dir}_streaming_encoding${block_size}
     fi
     if [ ${block_sync} = true ]; then
         recog_dir=${recog_dir}_blocksync${block_size}
@@ -174,17 +183,20 @@ for set in dev eval; do
         --recog_lm_weight ${lm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
         --recog_ctc_weight ${ctc_weight} \
+        --recog_softmax_smoothing ${softmax_smoothing} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
         --recog_bwd_attention ${bwd_attention} \
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_streaming_encoding ${streaming_encoding} \
         --recog_block_sync ${block_sync} \
         --recog_block_sync_size ${block_size} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_mma_delay_threshold ${mma_delay_threshold} \
+        --recog_rnnt_beam_search_type ${rnnt_beam_search_type} \
         --recog_stdout ${stdout} || exit 1;
 
     if [ ${metric} = 'edit_distance' ]; then

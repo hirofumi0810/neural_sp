@@ -439,22 +439,22 @@ def build_parser():
     parser.add_argument('--recog_eos_threshold', type=float, default=1.5,
                         help='threshold for emitting a EOS token')
     parser.add_argument('--recog_lm_weight', type=float, default=0.0,
-                        help='weight of first-path LM score')
+                        help='weight of first-pass LM score')
     parser.add_argument('--recog_lm_second_weight', type=float, default=0.0,
-                        help='weight of second-path LM score')
+                        help='weight of second-pass LM score')
     parser.add_argument('--recog_lm_bwd_weight', type=float, default=0.0,
-                        help='weight of second-path backward LM score. \
+                        help='weight of second-pass backward LM score. \
                                   First-pass backward LM in case of synchronous bidirectional decoding.')
     parser.add_argument('--recog_cache_embedding', type=strtobool, default=True,
                         help='cache token emebdding')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
                         help='weight of CTC score')
     parser.add_argument('--recog_lm', type=str, default=False, nargs='?',
-                        help='path to first path LM for shallow fusion')
+                        help='path to first-pass LM for shallow fusion')
     parser.add_argument('--recog_lm_second', type=str, default=False, nargs='?',
-                        help='path to second path LM for rescoring')
+                        help='path to second-pass LM for rescoring')
     parser.add_argument('--recog_lm_bwd', type=str, default=False, nargs='?',
-                        help='path to second path LM in the reverse direction for rescoring')
+                        help='path to second-pass LM in the reverse direction for rescoring')
     parser.add_argument('--recog_resolving_unk', type=strtobool, default=False,
                         help='resolving UNK for the word-based model')
     parser.add_argument('--recog_fwd_bwd_attention', type=strtobool, default=False,
@@ -495,7 +495,7 @@ def build_parser():
                         help='delay threshold for MMA decoder')
     parser.add_argument('--recog_mem_len', type=int, default=0,
                         help='number of tokens for memory in TransformerXL decoder during evaluation')
-    parser.add_argument('--recog_rnnt_beam_search_type', type=str, default='time_sync_simple',
-                        choices=['time_sync_simple', 'time_sync'],
-                        help='beam search type for RNN-T')
+    parser.add_argument('--recog_rnnt_beam_search_type', type=str, default='time_sync_mono',
+                        choices=['time_sync_mono', 'time_sync'],
+                        help='beam search algorithm for RNN-T')
     return parser

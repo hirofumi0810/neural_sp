@@ -462,6 +462,7 @@ class RNNTransducer(DecoderBase):
         ctc_weight = params.get('recog_ctc_weight')
         assert ctc_weight == 0
         assert ctc_log_probs is None
+        length_norm = params.get('recog_length_norm')
         cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
         lm_weight_second = params.get('recog_lm_second_weight')
@@ -499,11 +500,12 @@ class RNNTransducer(DecoderBase):
             hyps = self.initialize_beam([self.eos], dstate, lmstate)
             self.state_cache = OrderedDict()
 
-            if beam_search_type == 'time_sync_simple':
-                hyps, new_hyps_sorted = self._beam_search_time_sync_simple(
+            if beam_search_type == 'time_sync_mono':
+                hyps, new_hyps_sorted = self._time_sync_mono(
                     hyps, helper, eouts[b:b + 1, :elens[b]], softmax_smoothing, lm)
             elif beam_search_type == 'time_sync':
-                raise NotImplementedError
+                hyps, new_hyps_sorted = self._time_sync(
+                    hyps, helper, eouts[b:b + 1, :elens[b]], softmax_smoothing, lm)
             else:
                 raise NotImplementedError(beam_search_type)
 
@@ -517,8 +519,11 @@ class RNNTransducer(DecoderBase):
             end_hyps = helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
             # Normalize by length
-            end_hyps = sorted(end_hyps, key=lambda x: x['score'] / max(len(x['hyp'][1:]), 1), reverse=True)
-            # NOTE: See Algorithm 1 in https://arxiv.org/abs/1211.3711
+            if length_norm:
+                end_hyps = sorted(end_hyps, key=lambda x: x['score'] / max(len(x['hyp'][1:]), 1), reverse=True)
+                # NOTE: See Algorithm 1 in https://arxiv.org/abs/1211.3711
+            else:
+                end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
 
             if idx2token is not None:
                 if utt_ids is not None:
@@ -597,10 +602,10 @@ class RNNTransducer(DecoderBase):
             }
         return hyps, cache
 
-    def _beam_search_time_sync_simple(self, hyps, helper, eout, softmax_smoothing, lm):
+    def _time_sync_mono(self, hyps, helper, eout, softmax_smoothing, lm, merge_prob=True):
+        """Breadth-first time-synchronous decoding (TSD) with monotonic constraint (mono-TSD)."""
         beam_width = helper.beam_width
         lm_weight = helper.lm_weight
-        merge_prob = True
 
         for t in range(eout.size(1)):
             # bachfy all hypotheses (not in the cache, non-blank) for prediction network and LM
@@ -669,3 +674,104 @@ class RNNTransducer(DecoderBase):
             hyps = new_hyps_sorted[:beam_width]
 
         return hyps, new_hyps_sorted
+
+    def _time_sync(self, hyps, helper, eout, softmax_smoothing, lm,
+                   merge_prob=True, n_expand=3):
+        """Breadth-first time-synchronous decoding (TSD)."""
+        beam_width = helper.beam_width
+        lm_weight = helper.lm_weight
+
+        # B: hyps
+        for t in range(eout.size(1)):
+            new_hyps = []  # A
+            hyps_v = hyps[:]  # C <- B
+
+            for v in range(n_expand):
+                # bachfy all hypotheses (not in the cache, non-blank) for prediction network and LM
+                hyps_v, self.state_cache = self.batchfy_pred_net(hyps_v, helper, self.state_cache, lm)
+
+                # batchfy all hypotheses for joint network
+                douts = torch.cat([beam['dout'] for beam in hyps_v], dim=0)
+                logits = self.joint(eout[:, t:t + 1].repeat([len(hyps_v), 1, 1]), douts)
+                logits *= softmax_smoothing
+                scores_rnnt = torch.log_softmax(logits.squeeze(2).squeeze(1), dim=-1)  # `[B, vocab]`
+
+                new_hyp_ids_strs = [beam['hyp_ids_str'] for beam in new_hyps]
+                new_hyps_v = []  # D
+
+                # blank expansion
+                for j, beam in enumerate(hyps_v):
+                    blank_score = scores_rnnt[j, self.blank].item()
+                    if beam['hyp_ids_str'] in new_hyp_ids_strs and False:
+                        # merge
+                        index = new_hyp_ids_strs.index(beam['hyp_ids_str'])
+                        new_hyps[index]['score'] = np.logaddexp(new_hyps[index]['score'],
+                                                                beam['score'] + blank_score)
+                        new_hyps[index]['score_rnnt'] = np.logaddexp(new_hyps[index]['score_rnnt'],
+                                                                     beam['score_rnnt'] + blank_score)
+                        new_hyps[index]['path_len'] += 1
+                    else:
+                        new_hyps.append(beam.copy())
+                        new_hyps[-1]['score'] += blank_score
+                        new_hyps[-1]['score_rnnt'] += blank_score
+                        new_hyps[-1]['path_len'] += 1
+
+                # non-blank expansion
+                if v < n_expand - 1:
+                    for j, beam in enumerate(hyps_v):
+                        # Transducer scores
+                        total_scores_rnnt = beam['score_rnnt'] + scores_rnnt[j, 1:]  # exclude blank
+                        total_scores_topk, topk_ids = torch.topk(
+                            total_scores_rnnt, k=beam_width, dim=-1, largest=True, sorted=True)
+                        topk_ids += 1  # index:0 is for blank
+
+                        for k in range(beam_width):
+                            idx = topk_ids[k].item()
+
+                            total_score = total_scores_topk[k].item()
+                            total_score_rnnt = total_scores_topk[k].item()
+                            total_score_lm = beam['score_lm']
+                            if lm is not None:
+                                total_score_lm += beam['next_scores_lm'][0, -1, idx].item()
+                                total_score += total_score_lm * lm_weight
+
+                            # Update prediction network
+                            hyp_ids = beam['hyp'] + [idx]
+                            hyp_ids_str = ' '.join(list(map(str, hyp_ids)))
+                            exist_cache = hyp_ids_str in self.state_cache.keys()
+                            if exist_cache:
+                                # from cache
+                                dout = self.state_cache[hyp_ids_str]['dout']
+                                dstate = self.state_cache[hyp_ids_str]['dstate']
+                                scores_lm = self.state_cache[hyp_ids_str]['next_scores_lm']
+                                lmstate = self.state_cache[hyp_ids_str]['lmstate']
+                            else:
+                                # prediction network and LM will be updated later
+                                dout = None
+                                dstate = beam['dstate']
+                                scores_lm = None
+                                lmstate = beam['lmstate']
+
+                            new_hyps_v.append({'hyp': hyp_ids,
+                                               'hyp_ids_str': hyp_ids_str,
+                                               'score': total_score,
+                                               'score_rnnt': total_score_rnnt,
+                                               'score_lm': total_score_lm,
+                                               'dout': dout,
+                                               'dstate': dstate,
+                                               'next_scores_lm': scores_lm,
+                                               'lmstate': lmstate,
+                                               'update_pred_net': not exist_cache,
+                                               'path_len': beam['path_len'] + 1})
+
+                # Local pruning at each expansion (C <- D)
+                hyps_v_sorted = sorted(new_hyps_v, key=lambda x: x['score'], reverse=True)
+                hyps_v_sorted = helper.merge_rnnt_path(hyps_v_sorted, merge_prob)
+                hyps_v = hyps_v_sorted[:beam_width]
+
+            # Local pruning at t-th index (B <- A)
+            hyps_sorted = sorted(new_hyps, key=lambda x: x['score'] / len(x['hyp']), reverse=True)
+            hyps_sorted = helper.merge_rnnt_path(hyps_sorted, merge_prob)
+            hyps = hyps_sorted[:beam_width]
+
+        return hyps, hyps_v
