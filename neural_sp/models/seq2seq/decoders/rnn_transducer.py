@@ -462,7 +462,6 @@ class RNNTransducer(DecoderBase):
         ctc_weight = params.get('recog_ctc_weight')
         assert ctc_weight == 0
         assert ctc_log_probs is None
-        length_norm = params.get('recog_length_norm')
         cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
         lm_weight_second = params.get('recog_lm_second_weight')
@@ -519,11 +518,8 @@ class RNNTransducer(DecoderBase):
             end_hyps = helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
             # Normalize by length
-            if length_norm:
-                end_hyps = sorted(end_hyps, key=lambda x: x['score'] / max(len(x['hyp'][1:]), 1), reverse=True)
-                # NOTE: See Algorithm 1 in https://arxiv.org/abs/1211.3711
-            else:
-                end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
+            end_hyps = sorted(end_hyps, key=lambda x: x['score'] / max(len(x['hyp'][1:]), 1), reverse=True)
+            # NOTE: See Algorithm 1 in https://arxiv.org/abs/1211.3711
 
             if idx2token is not None:
                 if utt_ids is not None:
@@ -775,3 +771,62 @@ class RNNTransducer(DecoderBase):
             hyps = hyps_sorted[:beam_width]
 
         return hyps, hyps_v
+
+    def beam_search_block_sync(self, eouts, params, helper, idx2token,
+                               hyps, lm, state_carry_over=False):
+        assert eouts.size(0) == 1
+
+        beam_width = params.get('recog_beam_width')
+        lm_weight = params.get('recog_lm_weight')
+        softmax_smoothing = params.get('recog_softmax_smoothing')
+        beam_search_type = params.get('recog_rnnt_beam_search_type')
+
+        end_hyps = []
+        if hyps is None:
+            # Initialization per utterance
+            dstate = {'hxs': eouts.new_zeros(self.n_layers, 1, self.dec_n_units),
+                      'cxs': eouts.new_zeros(self.n_layers, 1, self.dec_n_units)}
+            lmstate = {'hxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units),
+                       'cxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units)} if lm is not None else None
+
+            if state_carry_over:
+                dstate = self.dstates_final
+                lmstate = self.lmstate_final
+
+            self.n_frames = 0
+            self.chunk_size = eouts.size(1)
+            hyps = self.initialize_beam([self.eos], dstate, lmstate)
+            self.state_cache = OrderedDict()
+
+        if beam_search_type == 'time_sync_mono':
+            hyps, new_hyps_sorted = self._time_sync_mono(
+                hyps, helper, eouts, softmax_smoothing, lm)
+        elif beam_search_type == 'time_sync':
+            hyps, new_hyps_sorted = self._time_sync(
+                hyps, helper, eouts, softmax_smoothing, lm)
+        else:
+            raise NotImplementedError(beam_search_type)
+
+        # merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'] / len(x['hyp']), reverse=True)[:beam_width]
+        merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+        if idx2token is not None:
+            logger.info('=' * 200)
+            for k in range(len(merged_hyps)):
+                logger.info('Hyp: %s' % idx2token(merged_hyps[k]['hyp'][1:]))
+                if len(merged_hyps[k]['hyp']) > 1:
+                    logger.info('num tokens (hyp): %d' % len(merged_hyps[k]['hyp'][1:]))
+                logger.info('log prob (hyp): %.7f' % merged_hyps[k]['score'])
+                logger.info('log prob (hyp, rnnt): %.7f' % merged_hyps[k]['score_rnnt'])
+                if lm is not None:
+                    logger.info('log prob (hyp, first-pass lm): %.7f' %
+                                (merged_hyps[k]['score_lm'] * lm_weight))
+                logger.info('-' * 50)
+
+        # Store ASR/LM state
+        if len(end_hyps) > 0:
+            self.dstates_final = end_hyps[0]['dstates']
+            self.lmstate_final = end_hyps[0]['lmstate']
+
+        self.n_frames += eouts.size(1)
+
+        return end_hyps, hyps
