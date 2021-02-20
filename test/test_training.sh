@@ -33,6 +33,7 @@ ln -sf ${root}/coverage.xml .
 ### RNN-T
 ./run.sh --stage 4 --conf conf/asr/lcblstm_transducer.yaml || exit 1;
 ./score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL40R40_drop4_lstm_transducer16H8P1L_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
+./score.sh --block_sync true --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL40R40_drop4_lstm_transducer16H8P1L_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
 ### Transformer
 ./run.sh --stage 4 --conf conf/asr/transformer.yaml || exit 1;
 ./score.sh --model results/asr/train_char/conv2Ltransformer8dmodel32dff1L4Hpenone_max_pool4_transformer8dmodel32dff1L4Hpe1dconv3Lscaled_dot_noam_lr5.0_bs1_ls0.1_warmup2_accum2_ctc0.3/model.epoch-2 || exit 1;

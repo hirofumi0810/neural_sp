@@ -616,7 +616,8 @@ class Speech2Text(ModelBase):
                 end_hyps, hyps = self.dec_fwd.ctc.beam_search_block_sync(
                     eout_block, params, helper, idx2token, hyps, lm)
             elif isinstance(self.dec_fwd, RNNT):
-                raise NotImplementedError
+                end_hyps, hyps = self.dec_fwd.beam_search_block_sync(
+                    eout_block, params, helper, idx2token, hyps, lm)
             elif isinstance(self.dec_fwd, RNNDecoder):
                 for i in range(math.ceil(eout_block.size(1) / block_size)):
                     eout_block_i = eout_block[:, i * block_size:(i + 1) * block_size]
