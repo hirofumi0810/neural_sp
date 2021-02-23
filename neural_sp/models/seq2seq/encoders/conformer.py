@@ -95,16 +95,16 @@ class ConformerEncoder(TransformerEncoder):
 
         self.layers = nn.ModuleList([copy.deepcopy(conformer_block(
             d_model, d_ff, n_heads, kernel_size,
-            dropout, dropout_att, dropout_layer,
+            dropout, dropout_att, dropout_layer * (lth + 1) / n_layers,
             layer_norm_eps, ffn_activation, param_init,
             pe_type, clamp_len, ffn_bottleneck_dim, causal, normalization))
-            for _ in range(n_layers)])
+            for lth in range(n_layers)])
 
         if n_layers_sub1 > 0:
             if task_specific_layer:
                 self.layer_sub1 = conformer_block(
                     d_model, d_ff, n_heads, kernel_size,
-                    dropout, dropout_att, dropout_layer,
+                    dropout, dropout_att, dropout_layer * n_layers_sub1 / n_layers,
                     layer_norm_eps, ffn_activation, param_init,
                     pe_type, clamp_len, ffn_bottleneck_dim, causal)
 
@@ -112,7 +112,7 @@ class ConformerEncoder(TransformerEncoder):
             if task_specific_layer:
                 self.layer_sub2 = conformer_block(
                     d_model, d_ff, n_heads, kernel_size,
-                    dropout, dropout_att, dropout_layer,
+                    dropout, dropout_att, dropout_layer * n_layers_sub2 / n_layers,
                     layer_norm_eps, ffn_activation, param_init,
                     pe_type, clamp_len, ffn_bottleneck_dim, causal)
 

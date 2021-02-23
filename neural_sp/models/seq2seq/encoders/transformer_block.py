@@ -64,7 +64,8 @@ class TransformerEncoderBlock(nn.Module):
                                 ffn_bottleneck_dim)
 
         self.dropout = nn.Dropout(dropout)
-        self.dropout_layer = dropout_layer
+        self.dropout_layer = dropout_layer  # probability to skip
+        logger.info('Stochastic depth prob: %.3f' % dropout_layer)
 
         self.reset_visualization()
 
@@ -127,7 +128,6 @@ class TransformerEncoderBlock(nn.Module):
             xs, self._xx_aws = self.self_attn(xs_kv, xs, pos_embs, xx_mask, u_bias, v_bias)  # k/q/m
         else:
             xs, self._xx_aws = self.self_attn(xs_kv, xs_kv, xs, mask=xx_mask)[:2]  # k/v/q
-        # assert xs.size() == residual.size()
         xs = self.dropout(xs) + residual
 
         ##################################################

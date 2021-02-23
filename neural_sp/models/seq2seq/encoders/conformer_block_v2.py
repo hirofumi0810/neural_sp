@@ -79,7 +79,8 @@ class ConformerEncoderBlock_v2(nn.Module):
         self.norm5 = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         self.dropout = nn.Dropout(dropout)
-        self.dropout_layer = dropout_layer
+        self.dropout_layer = dropout_layer  # probability to skip
+        logger.info('Stochastic depth prob: %.3f' % dropout_layer)
 
         self.reset_visualization()
 
@@ -150,7 +151,6 @@ class ConformerEncoderBlock_v2(nn.Module):
         if cache is not None:
             xs = xs[:, -qlen:]
 
-        # assert xs.size() == residual.size()
         xs = self.dropout(xs) + residual
 
         ##################################################
@@ -171,7 +171,6 @@ class ConformerEncoderBlock_v2(nn.Module):
             xx_mask = xx_mask[:, -qlen:]
 
         xs, self._xx_aws = self.self_attn(xs_kv, xs_kv, xs, mask=xx_mask)[:2]  # k/v/q
-        # assert xs.size() == residual.size()
         xs = self.dropout(xs) + residual
 
         ##################################################

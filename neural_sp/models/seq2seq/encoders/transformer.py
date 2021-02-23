@@ -249,10 +249,10 @@ class TransformerEncoder(EncoderBase):
 
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
             d_model, d_ff, n_heads,
-            dropout, dropout_att, dropout_layer,
+            dropout, dropout_att, dropout_layer * (lth + 1) / n_layers,
             layer_norm_eps, ffn_activation, param_init,
             pe_type, clamp_len, ffn_bottleneck_dim))
-            for _ in range(n_layers)])
+            for lth in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self._odim = d_model
 
@@ -260,7 +260,7 @@ class TransformerEncoder(EncoderBase):
             if task_specific_layer:
                 self.layer_sub1 = TransformerEncoderBlock(
                     d_model, d_ff, n_heads,
-                    dropout, dropout_att, dropout_layer,
+                    dropout, dropout_att, dropout_layer * n_layers_sub1 / n_layers,
                     layer_norm_eps, ffn_activation, param_init,
                     pe_type, clamp_len, ffn_bottleneck_dim)
             odim_sub1 = d_model
@@ -276,7 +276,7 @@ class TransformerEncoder(EncoderBase):
             if task_specific_layer:
                 self.layer_sub2 = TransformerEncoderBlock(
                     d_model, d_ff, n_heads,
-                    dropout, dropout_att, dropout_layer,
+                    dropout, dropout_att, dropout_layer * n_layers_sub2 / n_layers,
                     layer_norm_eps, ffn_activation, param_init,
                     pe_type, clamp_len, ffn_bottleneck_dim)
             odim_sub2 = d_model
