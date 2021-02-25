@@ -3,6 +3,7 @@
 
 """Relative multi-head attention layer for TransformerXL."""
 
+from distutils.version import LooseVersion
 import logging
 import math
 import numpy as np
@@ -13,6 +14,8 @@ from neural_sp.models.modules.headdrop import headdrop
 
 
 logger = logging.getLogger(__name__)
+
+torch_12_plus = LooseVersion("1.3") > LooseVersion(torch.__version__) >= LooseVersion("1.2")
 
 
 class RelativeMultiheadAttentionMechanism(nn.Module):
@@ -85,7 +88,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
             if bias:
                 nn.init.constant_(self.w_pos.bias, 0.)
 
-    def _rel_shift_v1(self, xs):
+    def _rel_shift_legacy(self, xs):
         """Calculate relative positional attention efficiently (old version).
 
         Args:
@@ -105,7 +108,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
 
         return xs_shifted.view(qlen, klen, bs, n_heads).permute(2, 0, 1, 3)
 
-    def _rel_shift_v2(self, xs):
+    def _rel_shift(self, xs):
         """Calculate relative positional attention efficiently.
 
         Args:
@@ -125,7 +128,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         # for streaming inference
         if klen != qlen:
             rel_pos_idx = rel_pos_idx[:, :qlen]
-            mask = xs.new_ones(qlen, klen, dtype=torch.uint8)
+            mask = xs.new_ones(qlen, klen, dtype=torch.bool if torch_12_plus else torch.uint8)
             mask = torch.tril(mask, diagonal=0).transpose(1, 0)
             rel_pos_idx[mask] *= -1
             rel_pos_idx = klen - qlen - rel_pos_idx
@@ -189,8 +192,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
             BD = torch.einsum("bihd,jhd->bijh", (q, _pos_embs))  # `[B, qlen, mlen+qlen, H]`
 
         # Compute positional attention efficiently
-        # BD = self._rel_shift_v1(BD)
-        BD = self._rel_shift_v2(BD)
+        BD = self._rel_shift(BD)
 
         # the attention is the sum of content-based and position-based attention
         e = (AC + BD) / self.scale  # `[B, qlen, mlen+qlen, H]`
