@@ -125,10 +125,8 @@ class XLPositionalEmbedding(nn.Module):
             pos_emb (LongTensor): `[L, 1, d_model]`
 
         """
-        pos_idxs = torch.arange(-1, -xs.size(1) - 1 - mlen, -1.0, dtype=torch.float, device=xs.device)
-
-        # outer product
-        sinusoid_inp = torch.einsum("i,j->ij", pos_idxs, self.inv_freq)
-        pos_emb = torch.cat([sinusoid_inp.sin(), sinusoid_inp.cos()], dim=-1)
+        pos_idxs = torch.arange(-1, -(xs.size(1) + mlen) - 1, -1.0, dtype=torch.float, device=xs.device)
+        sinusoid_inp_fwd = torch.einsum("i,j->ij", pos_idxs, self.inv_freq)
+        pos_emb = torch.cat([sinusoid_inp_fwd.sin(), sinusoid_inp_fwd.cos()], dim=-1)
         pos_emb = self.dropout(pos_emb)
         return pos_emb.unsqueeze(1)
