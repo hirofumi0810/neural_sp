@@ -26,33 +26,23 @@ def hard_monotonic_attention(e_ma, aw_prev, eps_wait):
     assert e_ma.size(-1) == aw_prev.size(-1)
 
     aw_prev = aw_prev[:, :, :, -klen:]
+    # assert aw_prev.sum() > 0
 
-    if H_ma == 1:
-        # assert aw_prev.sum() > 0
-        p_choose = (torch.sigmoid(e_ma) >= 0.5).float()[:, :, 0:1]
-        # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
-        # Remove any probabilities before the index chosen at the last time step
-        p_choose *= torch.cumsum(
-            aw_prev[:, :, 0:1, -e_ma.size(3):], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
-        # Now, use exclusive cumprod to remove probabilities after the first
-        # chosen index, like so:
-        # p_choose                        = [0, 0, 0, 1, 1, 0, 1, 1]
-        # 1 - p_choose                    = [1, 1, 1, 0, 0, 1, 0, 0]
-        # exclusive_cumprod(1 - p_choose) = [1, 1, 1, 1, 0, 0, 0, 0]
-        # alpha: product of above         = [0, 0, 0, 1, 0, 0, 0, 0]
-        alpha = p_choose * exclusive_cumprod(1 - p_choose)  # `[B, H_ma, 1 (qlen), klen]`
-    else:
-        p_choose = (torch.sigmoid(e_ma) >= 0.5).float()[:, :, 0:1]
-        # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
-        # Remove any probabilities before the index chosen at the last time step
-        p_choose *= torch.cumsum(aw_prev[:, :, 0:1], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
-        # Now, use exclusive cumprod to remove probabilities after the first
-        # chosen index, like so:
-        # p_choose                        = [0, 0, 0, 1, 1, 0, 1, 1]
-        # 1 - p_choose                    = [1, 1, 1, 0, 0, 1, 0, 0]
-        # exclusive_cumprod(1 - p_choose) = [1, 1, 1, 1, 0, 0, 0, 0]
-        # alpha: product of above         = [0, 0, 0, 1, 0, 0, 0, 0]
-        alpha = p_choose * exclusive_cumprod(1 - p_choose)  # `[B, H_ma, 1 (qlen), klen]`
+    p_threshold = 0.5
+    p_choose = (torch.sigmoid(e_ma[:, :, 0:1]) >= p_threshold).float()
+
+    # Attend when monotonic energy is above threshold (Sigmoid > p_threshold)
+    # Remove any probabilities before the index chosen at the last time step
+    p_choose *= torch.cumsum(
+        aw_prev[:, :, 0:1, -e_ma.size(3):], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
+
+    # Now, use exclusive cumprod to remove probabilities after the first
+    # chosen index, like so:
+    # p_choose                        = [0, 0, 0, 1, 1, 0, 1, 1]
+    # 1 - p_choose                    = [1, 1, 1, 0, 0, 1, 0, 0]
+    # exclusive_cumprod(1 - p_choose) = [1, 1, 1, 1, 0, 0, 0, 0]
+    # alpha: product of above         = [0, 0, 0, 1, 0, 0, 0, 0]
+    alpha = p_choose * exclusive_cumprod(1 - p_choose)  # `[B, H_ma, 1 (qlen), klen]`
 
     if eps_wait > 0:
         for b in range(bs):
