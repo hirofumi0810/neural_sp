@@ -22,7 +22,7 @@ def eval_char(models, dataloader, recog_params, epoch,
     Args:
         models (List): models to evaluate
         dataloader (torch.utils.data.DataLoader): evaluation dataloader
-        recog_params (dict):
+        recog_params (omegaconf.dictconfig.DictConfig): decoding hyperparameters
         epoch (int):
         recog_dir (str):
         streaming (bool): streaming decoding for session-level evaluation
@@ -31,8 +31,8 @@ def eval_char(models, dataloader, recog_params, epoch,
             0: main task
             1: sub task
             2: sub sub task
-        oracle (bool): calculate oracle WER
         fine_grained (bool): calculate fine-grained WER distributions based on input lengths
+        oracle (bool): calculate oracle WER
         teacher_force (bool): conduct decoding in teacher-forcing mode
     Returns:
         wer (float): Word error rate
@@ -40,11 +40,13 @@ def eval_char(models, dataloader, recog_params, epoch,
 
     """
     if recog_dir is None:
-        recog_dir = 'decode_' + dataloader.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
-        recog_dir += '_lp' + str(recog_params['recog_length_penalty'])
-        recog_dir += '_cp' + str(recog_params['recog_coverage_penalty'])
-        recog_dir += '_' + str(recog_params['recog_min_len_ratio']) + '_' + str(recog_params['recog_max_len_ratio'])
-        recog_dir += '_lm' + str(recog_params['recog_lm_weight'])
+        recog_dir = 'decode_' + dataloader.set + '_ep' + \
+            str(epoch) + '_beam' + str(recog_params.get('recog_beam_width'))
+        recog_dir += '_lp' + str(recog_params.get('recog_length_penalty'))
+        recog_dir += '_cp' + str(recog_params.get('recog_coverage_penalty'))
+        recog_dir += '_' + str(recog_params.get('recog_min_len_ratio')) + '_' + \
+            str(recog_params.get('recog_max_len_ratio'))
+        recog_dir += '_lm' + str(recog_params.get('recog_lm_weight'))
 
         ref_trn_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
         hyp_trn_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
@@ -65,7 +67,7 @@ def eval_char(models, dataloader, recog_params, epoch,
     last_success_frame_ratio = 0
 
     # Reset data counter
-    dataloader.reset(recog_params['recog_batch_size'])
+    dataloader.reset(recog_params.get('recog_batch_size'))
 
     if progressbar:
         pbar = tqdm(total=len(dataloader))
@@ -82,15 +84,15 @@ def eval_char(models, dataloader, recog_params, epoch,
     with codecs.open(hyp_trn_path, 'w', encoding='utf-8') as f_hyp, \
             codecs.open(ref_trn_path, 'w', encoding='utf-8') as f_ref:
         while True:
-            batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
-            if streaming or recog_params['recog_block_sync']:
+            batch, is_new_epoch = dataloader.next(recog_params.get('recog_batch_size'))
+            if streaming or recog_params.get('recog_block_sync'):
                 nbest_hyps_id = models[0].decode_streaming(
                     batch['xs'], recog_params, dataloader.idx2token[0],
                     exclude_eos=True)[0]
             else:
                 nbest_hyps_id = models[0].decode(
                     batch['xs'], recog_params,
-                    idx2token=dataloader.idx2token[task_idx] if progressbar else None,
+                    idx2token=dataloader.idx2token[0],
                     exclude_eos=True,
                     refs_id=batch['ys'] if task_idx == 0 else batch['ys_sub' + str(task_idx)],
                     utt_ids=batch['utt_ids'],
@@ -119,7 +121,7 @@ def eval_char(models, dataloader, recog_params, epoch,
                     utt_id = str(batch['utt_ids'][b])
                 f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
                 f_hyp.write(nbest_hyps[0] + ' (' + speaker + '-' + utt_id + ')\n')
-                logger.debug('utt-id: %s' % utt_id)
+                logger.debug('utt-id (%d/%d): %s' % (n_utt + 1, len(dataloader), utt_id))
                 logger.debug('Ref: %s' % ref)
                 logger.debug('Hyp: %s' % nbest_hyps[0])
                 logger.debug('-' * 150)
@@ -171,9 +173,9 @@ def eval_char(models, dataloader, recog_params, epoch,
                         last_success_frame_ratio += models[0].last_success_frame_ratio()
                     quantity_rate += models[0].quantity_rate()
 
-                n_utt += 1
+                n_utt += len(batch['utt_ids'])
                 if progressbar:
-                    pbar.update(1)
+                    pbar.update(len(batch['utt_ids']))
 
             if is_new_epoch:
                 break
@@ -203,7 +205,7 @@ def eval_char(models, dataloader, recog_params, epoch,
         n_streamable /= n_utt
         quantity_rate /= n_utt
 
-        if recog_params['recog_beam_width'] > 1:
+        if recog_params.get('recog_beam_width') > 1:
             logger.info('WER (%s): %.2f %%' % (dataloader.set, wer))
             logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
             logger.info('CER (%s): %.2f %%' % (dataloader.set, cer))

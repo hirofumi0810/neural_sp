@@ -473,6 +473,8 @@ def build_parser():
                         help='')
     parser.add_argument('--recog_n_average', type=int, default=1,
                         help='number of models for the model averaging of Transformer')
+    parser.add_argument('--recog_longform_max_n_frames', type=int, default=0,
+                        help='maximum input length for long-form evaluation')
     parser.add_argument('--recog_streaming', type=strtobool, default=False,
                         help='streaming decoding (both encoding and decoding are streaming)')
     parser.add_argument('--recog_streaming_encoding', type=strtobool, default=False,
