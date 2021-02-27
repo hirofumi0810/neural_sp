@@ -54,7 +54,8 @@ def main():
                                       tsv_path=s,
                                       batch_size=1,
                                       is_test=True,
-                                      first_n_utterances=args.recog_first_n_utt)
+                                      first_n_utterances=args.recog_first_n_utt,
+                                      longform_max_n_frames=args.recog_longform_max_n_frames)
 
         if i == 0:
             # Load ASR model

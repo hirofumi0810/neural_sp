@@ -35,6 +35,7 @@ lm_second_weight=0.3
 lm_bwd_weight=0.3
 wordlm=false
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
+softmax_smoothing=1.0
 resolving_unk=false
 fwd_bwd_attention=false
 bwd_attention=false
@@ -43,9 +44,11 @@ asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=10  # for Transformer
 oracle=false
-block_sync=false  # for MoChA
-block_size=20  # for MoChA
-mma_delay_threshold=-1
+longform_max_n_frames=0
+streaming_encoding=false
+block_sync=false
+block_size=20
+mma_delay_threshold=-1  # for MMA
 
 . ./cmd.sh
 . ./path.sh
@@ -63,7 +66,8 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev eval1 eval2 eval3; do
+# for set in dev; do
+for set in eval1 eval2 eval3; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
@@ -89,6 +93,9 @@ for set in dev eval1 eval2 eval3; do
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
     fi
+    if [ ${softmax_smoothing} != 1.0 ]; then
+        recog_dir=${recog_dir}_smooth${softmax_smoothing}
+    fi
     if [ ${gnmt_decoding} = true ]; then
         recog_dir=${recog_dir}_gnmt
     fi
@@ -106,6 +113,12 @@ for set in dev eval1 eval2 eval3; do
     fi
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
+    fi
+    if [ ${longform_max_n_frames} != 0 ]; then
+        recog_dir=${recog_dir}_longform${longform_max_n_frames}
+    fi
+    if [ ${streaming_encoding} = true ]; then
+        recog_dir=${recog_dir}_streaming_encoding${block_size}
     fi
     if [ ${block_sync} = true ]; then
         recog_dir=${recog_dir}_blocksync${block_size}
@@ -175,18 +188,23 @@ for set in dev eval1 eval2 eval3; do
         --recog_lm_bwd_weight ${lm_bwd_weight} \
         --recog_wordlm ${wordlm} \
         --recog_ctc_weight ${ctc_weight} \
+        --recog_softmax_smoothing ${softmax_smoothing} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
         --recog_bwd_attention ${bwd_attention} \
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_longform_max_n_frames ${longform_max_n_frames} \
+        --recog_streaming_encoding ${streaming_encoding} \
         --recog_block_sync ${block_sync} \
         --recog_block_sync_size ${block_size} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_mma_delay_threshold ${mma_delay_threshold} \
         --recog_stdout ${stdout} || exit 1;
+
+    grep RTF ${recog_dir}/decode.log
 
     if [ ${metric} = 'edit_distance' ]; then
         # remove <unk>

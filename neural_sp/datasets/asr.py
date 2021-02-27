@@ -40,7 +40,8 @@ def build_dataloader(args, tsv_path, batch_size, n_epochs=1e10, is_test=False,
                      sort_by='utt_id', short2long=False, sort_stop_epoch=1e10,
                      tsv_path_sub1=False, tsv_path_sub2=False,
                      num_workers=1, pin_memory=False,
-                     first_n_utterances=-1, word_alignment_dir=None, ctc_alignment_dir=None):
+                     first_n_utterances=-1, word_alignment_dir=None, ctc_alignment_dir=None,
+                     longform_max_n_frames=0):
 
     dataset = CustomDataset(corpus=args.corpus,
                             tsv_path=tsv_path,
@@ -68,6 +69,7 @@ def build_dataloader(args, tsv_path, batch_size, n_epochs=1e10, is_test=False,
                             short2long=short2long,
                             is_test=is_test,
                             first_n_utterances=first_n_utterances,
+                            simulate_longform=longform_max_n_frames > 0,
                             word_alignment_dir=word_alignment_dir,
                             ctc_alignment_dir=ctc_alignment_dir)
 
@@ -78,7 +80,8 @@ def build_dataloader(args, tsv_path, batch_size, n_epochs=1e10, is_test=False,
                                        dynamic_batching=args.dynamic_batching,
                                        shuffle_bucket=args.shuffle_bucket and not is_test,
                                        sort_stop_epoch=args.sort_stop_epoch,
-                                       discourse_aware=args.discourse_aware)
+                                       discourse_aware=args.discourse_aware,
+                                       longform_max_n_frames=longform_max_n_frames)
 
     dataloader = CustomDataLoader(dataset=dataset,
                                   batch_sampler=batch_sampler,
@@ -201,7 +204,7 @@ class CustomDataset(Dataset):
                  dict_path_sub1, dict_path_sub2,
                  unit_sub1, unit_sub2,
                  wp_model_sub1, wp_model_sub2,
-                 discourse_aware=False, first_n_utterances=-1,
+                 discourse_aware=False, simulate_longform=False, first_n_utterances=-1,
                  word_alignment_dir=None, ctc_alignment_dir=None):
         """Custom Dataset class.
 
@@ -223,6 +226,7 @@ class CustomDataset(Dataset):
             ctc (bool):
             subsample_factor (int):
             discourse_aware (bool): sort in the discourse order
+            simulate_longform (bool): simulate long-form uttterance
             first_n_utterances (int): evaluate the first N utterances
             word_alignment_dir (str): path to word alignment directory
             ctc_alignment_dir (str): path to CTC alignment directory
@@ -246,6 +250,9 @@ class CustomDataset(Dataset):
         #     assert sort_by in ['input', 'output']
         if discourse_aware:
             assert not is_test
+        if simulate_longform:
+            assert is_test
+        self.simulate_longform = simulate_longform
 
         self.subsample_factor = subsample_factor
         self.word_alignment_dir = word_alignment_dir
@@ -483,6 +490,15 @@ class CustomDataset(Dataset):
         else:
             ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in indices]
 
+        if self.simulate_longform:
+            xs = [np.concatenate(xs, axis=0)]
+            ys_cat = [[]]
+            for y in ys:
+                ys_cat[0] += y
+            ys = ys_cat
+            xlens = [sum(xlens)]
+            texts = [' '.join(texts)]
+
         # sub1 outputs
         ys_sub1 = []
         if self.df_sub1 is not None:
@@ -518,7 +534,7 @@ class CustomBatchSampler(BatchSampler):
 
     def __init__(self, df, batch_size, dynamic_batching,
                  shuffle_bucket, discourse_aware, sort_stop_epoch,
-                 df_sub1=None, df_sub2=None):
+                 df_sub1=None, df_sub2=None, longform_max_n_frames=0):
         """Custom BatchSampler.
 
         Args:
@@ -526,12 +542,13 @@ class CustomBatchSampler(BatchSampler):
             df (pandas.DataFrame): dataframe for the main task
             batch_size (int): size of mini-batch
             dynamic_batching (bool): change batch size dynamically in training
-            shuffle_bucket (bool): gather the similar length of utterances and shuffle them
+            shuffle_bucket (bool): gather similar length of utterances and shuffle them
             discourse_aware (bool): sort in the discourse order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
             df_sub1 (pandas.DataFrame): dataframe for the first sub task
             df_sub2 (pandas.DataFrame): dataframe for the second sub task
+            longform_max_n_frames (int): maximum input length for long-form evaluation
 
         """
         # super(BatchSampler, self).__init__()
@@ -546,11 +563,15 @@ class CustomBatchSampler(BatchSampler):
         self.shuffle_bucket = shuffle_bucket
         self.sort_stop_epoch = sort_stop_epoch
         self.discourse_aware = discourse_aware
+        self.longform_max_n_frames = longform_max_n_frames
 
         self._offset = 0
 
         if discourse_aware:
             self.indices_buckets = discourse_bucketing(self.df, batch_size)
+            self._iteration = len(self.indices_buckets)
+        elif longform_max_n_frames > 0:
+            self.indices_buckets = longform_bucketing(self.df, batch_size, longform_max_n_frames)
             self._iteration = len(self.indices_buckets)
         elif shuffle_bucket:
             self.indices_buckets = shuffle_bucketing(self.df, batch_size, self.dynamic_batching)
@@ -583,6 +604,8 @@ class CustomBatchSampler(BatchSampler):
 
         if self.discourse_aware:
             self.indices_buckets = discourse_bucketing(self.df, batch_size)
+        elif self.longform_max_n_frames > 0:
+            self.indices_buckets = longform_bucketing(self.df, batch_size, self.longform_max_n_frames)
         elif self.shuffle_bucket:
             self.indices_buckets = shuffle_bucketing(self.df, batch_size, self.dynamic_batching)
         else:
@@ -601,19 +624,14 @@ class CustomBatchSampler(BatchSampler):
         """
         is_new_epoch = False
 
-        if self.discourse_aware:
+        if self.discourse_aware or self.longform_max_n_frames > 0 or self.shuffle_bucket:
             indices = self.indices_buckets.pop(0)
             self._offset += len(indices)
             is_new_epoch = (len(self.indices_buckets) == 0)
 
-        elif self.shuffle_bucket:
-            indices = self.indices_buckets.pop(0)
-            self._offset += len(indices)
-            is_new_epoch = (len(self.indices_buckets) == 0)
-
-            # Shuffle utterances in mini-batch
-            indices = random.sample(indices, len(indices))
-
+            if self.shuffle_bucket:
+                # Shuffle utterances in mini-batch
+                indices = random.sample(indices, len(indices))
         else:
             if batch_size is None:
                 batch_size = self.batch_size

@@ -51,6 +51,33 @@ def shuffle_bucketing(df, batch_size, dynamic_batching):
     return indices_buckets
 
 
+def longform_bucketing(df, batch_size, max_n_frames):
+    assert batch_size == 1
+    indices_buckets = []  # list of list
+    offset = 0
+    n_frames_total = 0
+    _batch_size = 0
+    speaker_prev = df.loc[offset]['speaker']
+    while True:
+        xlen = df.loc[offset + _batch_size]['xlen']
+        speaker = df.loc[offset + _batch_size]['speaker']
+        if (speaker == speaker_prev and (n_frames_total + xlen) > max_n_frames) or \
+                offset + _batch_size >= len(df) - 1:
+            indices = list(df[offset:offset + _batch_size + 1].index)
+            indices_buckets.append(indices)
+            offset += len(indices)
+            n_frames_total = 0
+            _batch_size = 0
+        else:
+            n_frames_total += xlen
+            _batch_size += 1
+        speaker_prev = speaker
+        if offset >= len(df):
+            break
+
+    return indices_buckets
+
+
 def discourse_bucketing(df, batch_size):
     indices_buckets = []  # list of list
     session_groups = [(k, v) for k, v in df.groupby('n_utt_in_session').groups.items()]
