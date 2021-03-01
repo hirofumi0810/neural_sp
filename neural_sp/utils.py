@@ -3,7 +3,7 @@
 
 """Unility functions for general purposes."""
 
-import os
+from pathlib import Path
 
 
 def mkdir_join(path, *dir_name):
@@ -14,19 +14,20 @@ def mkdir_join(path, *dir_name):
     Returns:
         path to the new directory
     """
-    if not os.path.isdir(path):
-        os.mkdir(path)
+    p = Path(path)
+    if not p.is_dir():
+        p.mkdir()
     for i in range(len(dir_name)):
         # dir
         if i < len(dir_name) - 1:
-            path = os.path.join(path, dir_name[i])
-            if not os.path.isdir(path):
-                os.mkdir(path)
+            p = p.joinpath(dir_name[i])
+            if not p.is_dir():
+                p.mkdir()
         elif '.' not in dir_name[i]:
-            path = os.path.join(path, dir_name[i])
-            if not os.path.isdir(path):
-                os.mkdir(path)
+            p = p.joinpath(dir_name[i])
+            if not p.is_dir():
+                p.mkdir()
         # file
         else:
-            path = os.path.join(path, dir_name[i])
-    return path
+            p = p.joinpath(dir_name[i])
+    return str(p.absolute())
