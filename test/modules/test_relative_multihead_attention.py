@@ -81,7 +81,7 @@ def test_forward(args):
 
     attention.train()
     aws = None
-    pos_embs = pos_emb(query, n_cache=mlen)
+    query, pos_embs = pos_emb(query, n_cache=mlen)
 
     out = attention(cat, query, pos_embs, causal_mask,
                     u_bias=u_bias, v_bias=v_bias)
@@ -93,7 +93,7 @@ def test_forward(args):
     # incremental check
     cv_incremental = []
     for t in range(qlen):
-        pos_embs_t = pos_emb(query[:, t:t + 1], mlen=mlen + t)
+        _, pos_embs_t = pos_emb(query[:, t:t + 1], n_cache=mlen + t)
         cv_incremental.append(attention(cat[:, :mlen + t + 1],
                                         query[:, t:t + 1],
                                         pos_embs_t,
