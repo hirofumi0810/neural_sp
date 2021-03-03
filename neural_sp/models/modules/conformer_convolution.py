@@ -51,7 +51,8 @@ class ConformerConvBlock(nn.Module):
                                         kernel_size=kernel_size,
                                         stride=1,
                                         padding=self.padding,
-                                        groups=d_model)  # depthwise
+                                        groups=d_model,  # depthwise
+                                        bias=True)
 
         if normalization == 'batch_norm':
             self.norm = nn.BatchNorm1d(d_model)
@@ -82,16 +83,17 @@ class ConformerConvBlock(nn.Module):
         """Initialize parameters with Xavier uniform distribution."""
         logger.info('===== Initialize %s with Xavier uniform distribution =====' %
                     self.__class__.__name__)
-        for layer in [self.pointwise_conv1, self.pointwise_conv2, self.depthwise_conv]:
-            for n, p in layer.named_parameters():
+        for conv_layer in [self.pointwise_conv1, self.pointwise_conv2, self.depthwise_conv]:
+            for n, p in conv_layer.named_parameters():
                 init_with_xavier_uniform(n, p)
 
     def reset_parameters_lecun(self, param_init=0.1):
         """Initialize parameters with lecun style.."""
         logger.info('===== Initialize %s with lecun style =====' %
                     self.__class__.__name__)
-        for n, p in self.named_parameters():
-            init_with_lecun_normal(n, p, param_init)
+        for conv_layer in [self.pointwise_conv1, self.pointwise_conv2, self.depthwise_conv]:
+            for n, p in conv_layer.named_parameters():
+                init_with_lecun_normal(n, p, param_init)
 
     def forward(self, xs):
         """Forward pass.

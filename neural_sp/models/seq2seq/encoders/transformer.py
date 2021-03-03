@@ -521,7 +521,7 @@ class TransformerEncoder(EncoderBase):
                 xx_mask = make_chunkwise_san_mask(xs, xlens + n_cache, N_l, N_c, n_chunks)
             for lth, layer in enumerate(self.layers):
                 xs, cache = layer(xs, xx_mask, cache=self.cache[lth],
-                                  pos_embs=rel_pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
+                                  pos_embs=rel_pos_embs, rel_bias=(self.u_bias, self.v_bias))
                 if self.streaming_type == 'mask':
                     new_cache[lth] = cache
                 if not self.training and not streaming:
@@ -564,7 +564,7 @@ class TransformerEncoder(EncoderBase):
             xx_mask = make_san_mask(xs, xlens + n_cache, unidir, self.lookaheads[0])
             for lth, layer in enumerate(self.layers):
                 xs, cache = layer(xs, xx_mask, cache=self.cache[lth],
-                                  pos_embs=rel_pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
+                                  pos_embs=rel_pos_embs, rel_bias=(self.u_bias, self.v_bias))
                 new_cache[lth] = cache
                 if not self.training and not streaming:
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
@@ -616,14 +616,14 @@ class TransformerEncoder(EncoderBase):
     def sub_module(self, xs, xx_mask, lth, pos_embs=None, module='sub1'):
         if self.task_specific_layer:
             xs_sub, cache = getattr(self, 'layer_' + module)(xs, xx_mask, pos_embs=pos_embs)
+            if not self.training:
+                self.aws_dict['xx_aws_%s_layer%d' % (module, lth)] = tensor2np(getattr(self, 'layer_' + module).xx_aws)
         else:
             xs_sub = xs.clone()
         if getattr(self, 'bridge_' + module) is not None:
             xs_sub = getattr(self, 'bridge_' + module)(xs_sub)
         if getattr(self, 'norm_out_' + module) is not None:
             xs_sub = getattr(self, 'norm_out_' + module)(xs_sub)
-        if not self.training:
-            self.aws_dict['xx_aws_%s_layer%d' % (module, lth)] = tensor2np(getattr(self, 'layer_' + module).xx_aws)
         return xs_sub
 
 
