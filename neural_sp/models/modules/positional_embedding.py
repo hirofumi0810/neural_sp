@@ -36,7 +36,7 @@ class PositionalEncoding(nn.Module):
 
         self.d_model = d_model
         self.pe_type = pe_type
-        self.scale = math.sqrt(self.d_model)
+        self.scale = math.sqrt(d_model)
 
         if '1dconv' in pe_type:
             causal_conv1d = CausalConv1d(in_channels=d_model,
@@ -109,24 +109,32 @@ class XLPositionalEmbedding(nn.Module):
         super().__init__()
 
         self.d_model = d_model
+        self.scale = math.sqrt(d_model)
 
         inv_freq = 1 / (10000 ** (torch.arange(0.0, d_model, 2.0) / d_model))
         self.register_buffer("inv_freq", inv_freq)
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, xs, mlen=0):
+    def forward(self, xs, scale=False, n_cache=0):
         """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, L, d_model]`
-            mlen (int); length of memory
+            scale (bool): multiply a scale factor
+            n_cache (int): number of state caches
         Returns:
+            xs (FloatTensor): `[B, L, d_model]`
             pos_emb (LongTensor): `[L, 1, d_model]`
 
         """
-        pos_idxs = torch.arange(-1, -(xs.size(1) + mlen) - 1, -1.0, dtype=torch.float, device=xs.device)
+        if scale:
+            xs = xs * self.scale
+        # NOTE: xs is an embedding before scaling
+
+        pos_idxs = torch.arange(-1, -(xs.size(1) + n_cache) - 1, -1.0,
+                                dtype=torch.float, device=xs.device)
         sinusoid_inp_fwd = torch.einsum("i,j->ij", pos_idxs, self.inv_freq)
         pos_emb = torch.cat([sinusoid_inp_fwd.sin(), sinusoid_inp_fwd.cos()], dim=-1)
         pos_emb = self.dropout(pos_emb)
-        return pos_emb.unsqueeze(1)
+        return xs, pos_emb.unsqueeze(1)

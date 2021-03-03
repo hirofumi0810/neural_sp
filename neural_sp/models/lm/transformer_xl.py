@@ -240,7 +240,7 @@ class TransformerXL(LMBase):
         causal_mask = causal_mask.repeat([bs, 1, 1])  # `[B, L, L+mlen]`
 
         out = self.embed_token_id(ys)
-        rel_pos_embs = self.pos_emb(ys, mlen=mlen)
+        ys, rel_pos_embs = self.pos_emb(ys, n_cache=mlen)
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
