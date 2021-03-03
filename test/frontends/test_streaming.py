@@ -173,7 +173,7 @@ def test_feature_extraction(args):
         j = 0
         xs_cat = []
         while True:
-            x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feature()
+            x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feat()
 
             if cnn_lookback:
                 xlen_block -= N_conv

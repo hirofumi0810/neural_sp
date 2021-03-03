@@ -81,7 +81,7 @@ def test_forward(args):
 
     attention.train()
     aws = None
-    pos_embs = pos_emb(query, mlen=mlen)
+    pos_embs = pos_emb(query, n_cache=mlen)
 
     out = attention(cat, query, pos_embs, causal_mask,
                     u_bias=u_bias, v_bias=v_bias)
