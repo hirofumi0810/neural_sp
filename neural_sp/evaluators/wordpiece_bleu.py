@@ -23,8 +23,8 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
         models (List): models to evaluate
         dataloader (torch.utils.data.DataLoader): evaluation dataloader
         recog_params (omegaconf.dictconfig.DictConfig): decoding hyperparameters
-        epoch (int):
-        recog_dir (str):
+        epoch (int): current epoch
+        recog_dir (str): directory path to save hypotheses
         streaming (bool): streaming decoding for session-level evaluation
         progressbar (bool): visualize progressbar
         fine_grained (bool): calculate fine-grained corpus-level BLEU distributions based on input lengths
@@ -121,7 +121,7 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
                                      for hyp_n in nbest_hyps]
                         oracle_idx = np.argmax(np.array(s_blues_b))
                         if oracle_idx == 0:
-                            n_oracle_hit += 1
+                            n_oracle_hit += len(batch['utt_ids'])
                         hypotheses_oracle += [nbest_hyps[oracle_idx].split(' ')]
 
                 n_utt += len(batch['utt_ids'])
