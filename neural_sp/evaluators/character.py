@@ -157,7 +157,7 @@ def eval_char(models, dataloader, recog_params, epoch,
                                             for hyp_n in nbest_hyps[1:]]
                         oracle_idx = np.argmin(np.array(cers_b))
                         if oracle_idx == 0:
-                            n_oracle_hit += 1
+                            n_oracle_hit += len(batch['utt_ids'])
                         cer_oracle += cers_b[oracle_idx]
 
                     if fine_grained:
@@ -168,7 +168,7 @@ def eval_char(models, dataloader, recog_params, epoch,
                             cer_dist[xlen_bin] = [err_b / 100]
 
                     if models[0].streamable():
-                        n_streamable += 1
+                        n_streamable += len(batch['utt_ids'])
                     else:
                         last_success_frame_ratio += models[0].last_success_frame_ratio()
                     quantity_rate += models[0].quantity_rate()

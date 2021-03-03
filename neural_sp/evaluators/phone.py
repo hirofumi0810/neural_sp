@@ -23,8 +23,8 @@ def eval_phone(models, dataloader, recog_params, epoch,
         models (List): models to evaluate
         dataloader (torch.utils.data.DataLoader): evaluation dataloader
         recog_params (omegaconf.dictconfig.DictConfig): decoding hyperparameters
-        epoch (int):
-        recog_dir (str):
+        epoch (int): current epoch
+        recog_dir (str): directory path to save hypotheses
         streaming (bool): streaming decoding for the session-level evaluation
         progressbar (bool): visualize the progressbar
         fine_grained (bool): calculate fine-grained PER distributions based on input lengths
@@ -115,7 +115,7 @@ def eval_phone(models, dataloader, recog_params, epoch,
                                             for hyp_n in nbest_hyps[1:]]
                         oracle_idx = np.argmin(np.array(pers_b))
                         if oracle_idx == 0:
-                            n_oracle_hit += 1
+                            n_oracle_hit += len(batch['utt_ids'])
                         per_oracle += pers_b[oracle_idx]
 
                 n_utt += len(batch['utt_ids'])
