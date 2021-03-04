@@ -437,7 +437,7 @@ class TransformerEncoder(EncoderBase):
         elif self.unidir:
             return 10000 // self.conv_factor
         else:
-            return None
+            return 10000 // self.conv_factor
 
     def forward(self, xs, xlens, task, streaming=False,
                 lookback=False, lookahead=False):
