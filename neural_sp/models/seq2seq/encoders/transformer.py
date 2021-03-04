@@ -491,9 +491,9 @@ class TransformerEncoder(EncoderBase):
                                   lookback=False if lc_bidir else lookback,
                                   lookahead=False if lc_bidir else lookahead)
             # NOTE: CNN lookahead surpassing a chunk is not allowed in chunkwise processing
-            N_l = max(0, N_l // self.conv.subsampling_factor)
-            N_c = N_c // self.conv.subsampling_factor
-            N_r = N_r // self.conv.subsampling_factor
+            N_l = max(0, N_l // self.conv_factor)
+            N_c = N_c // self.conv_factor
+            N_r = N_r // self.conv_factor
         emax = xs.size(1)
 
         if streaming and self.streaming_type != 'reshape':
@@ -515,7 +515,7 @@ class TransformerEncoder(EncoderBase):
         n_cache = self.cache[0]['input_san'].size(1) if streaming and self.cache[0] is not None else 0
 
         # positional encoding
-        if self.pe_type in ['relative', 'relative_xl']:
+        if 'relative' in self.pe_type:
             xs, rel_pos_embs = self.pos_emb(xs, scale=True, n_cache=n_cache)
         else:
             xs = self.pos_enc(xs, scale=True, offset=self.offset)
@@ -562,12 +562,12 @@ class TransformerEncoder(EncoderBase):
                         # This is necessary at every layer during streaming inference because of different cache sizes
                         n_cache = self.cache[lth + 1]['input_san'].size(
                             1) if self.cache[lth + 1] is not None else 0
-                        if self.pe_type in ['relative', 'relative_xl']:
+                        if 'relative' in self.pe_type:
                             xs, rel_pos_embs = self.pos_emb(xs, n_cache=n_cache)
                         if self.streaming_type == 'mask':
                             xx_mask = make_chunkwise_san_mask(xs, xlens + n_cache, N_l, N_c, n_chunks)
                     elif self.subsample_factors[lth] > 1:
-                        if self.pe_type in ['relative', 'relative_xl']:
+                        if 'relative' in self.pe_type:
                             xs, rel_pos_embs = self.pos_emb(xs)
                         if self.streaming_type == 'mask':
                             xx_mask = make_chunkwise_san_mask(xs, xlens, N_l, N_c, n_chunks)
@@ -609,14 +609,15 @@ class TransformerEncoder(EncoderBase):
                         # This is necessary at every layer during streaming inference because of different cache sizes
                         n_cache = self.cache[lth + 1]['input_san'].size(
                             1) if streaming and self.cache[lth + 1] is not None else 0
-                        if self.pe_type in ['relative', 'relative_xl']:
+                        if 'relative' in self.pe_type:
                             xs, rel_pos_embs = self.pos_emb(xs, n_cache=n_cache)
                         xx_mask = make_san_mask(xs, xlens + n_cache, unidir, self.lookaheads[lth + 1])
                     else:
                         if self.subsample_factors[lth] > 1:
-                            if self.pe_type in ['relative', 'relative_xl']:
+                            if 'relative' in self.pe_type:
                                 xs, rel_pos_embs = self.pos_emb(xs)
-                        if self.lookaheads[lth] != self.lookaheads[lth + 1]:
+                            xx_mask = make_san_mask(xs, xlens + n_cache, unidir, self.lookaheads[lth + 1])
+                        elif self.lookaheads[lth] != self.lookaheads[lth + 1]:
                             xx_mask = make_san_mask(xs, xlens + n_cache, unidir, self.lookaheads[lth + 1])
 
         xs = self.norm_out(xs)
