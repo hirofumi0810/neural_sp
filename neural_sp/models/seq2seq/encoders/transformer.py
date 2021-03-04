@@ -709,6 +709,3 @@ def make_chunkwise_san_mask(xs, xlens, N_l, N_c, n_chunks):
         xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
         xx_mask[:, offset:offset + N_c, offset + N_c:] = 0
     return xx_mask
-
-
-s
