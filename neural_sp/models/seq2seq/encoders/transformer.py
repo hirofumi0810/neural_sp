@@ -99,17 +99,14 @@ class TransformerEncoder(EncoderBase):
         super(TransformerEncoder, self).__init__()
 
         # parse subsample
-        subsamples = [1] * n_layers
+        self.subsample_factors = [1] * n_layers
         for lth, s in enumerate(list(map(int, subsample.split('_')[:n_layers]))):
-            subsamples[lth] = s
+            self.subsample_factors[lth] = s
         # parse lookahead
         lookaheads = [0] * n_layers
         for lth, s in enumerate(list(map(int, lookahead.split('_')[:n_layers]))):
             lookaheads[lth] = s
 
-        if len(subsamples) > 0 and len(subsamples) != n_layers:
-            raise ValueError('subsample must be the same size as n_layers. n_layers: %d, subsample: %s' %
-                             (n_layers, subsamples))
         if n_layers_sub1 < 0 or (n_layers_sub1 > 1 and n_layers < n_layers_sub1):
             raise Warning('Set n_layers_sub1 between 1 to n_layers. n_layers: %d, n_layers_sub1: %d' %
                           (n_layers, n_layers_sub1))
@@ -208,26 +205,26 @@ class TransformerEncoder(EncoderBase):
 
         # calculate subsampling factor
         self._factor = 1
-        if self.conv is not None:
-            self._factor *= self.conv.subsampling_factor
-        self.subsample = None
-        if np.prod(subsamples) > 1:
-            self._factor *= np.prod(subsamples)
+        self.conv_factor = self.conv.subsampling_factor if self.conv is not None else 1
+        self._factor *= self.conv_factor
+        self.subsample_layers = None
+        if np.prod(self.subsample_factors) > 1:
+            self._factor *= np.prod(self.subsample_factors)
             if subsample_type == 'max_pool':
-                self.subsample = nn.ModuleList([MaxpoolSubsampler(factor)
-                                                for factor in subsamples])
+                self.subsample_layers = nn.ModuleList([MaxpoolSubsampler(factor)
+                                                       for factor in self.subsample_factors])
             elif subsample_type == 'concat':
-                self.subsample = nn.ModuleList([ConcatSubsampler(factor, self._odim)
-                                                for factor in subsamples])
+                self.subsample_layers = nn.ModuleList([ConcatSubsampler(factor, self._odim)
+                                                       for factor in self.subsample_factors])
             elif subsample_type == 'drop':
-                self.subsample = nn.ModuleList([DropSubsampler(factor)
-                                                for factor in subsamples])
+                self.subsample_layers = nn.ModuleList([DropSubsampler(factor)
+                                                       for factor in self.subsample_factors])
             elif subsample_type == '1dconv':
-                self.subsample = nn.ModuleList([Conv1dSubsampler(factor, self._odim)
-                                                for factor in subsamples])
+                self.subsample_layers = nn.ModuleList([Conv1dSubsampler(factor, self._odim)
+                                                       for factor in self.subsample_factors])
             elif subsample_type == 'add':
-                self.subsample = nn.ModuleList([AddSubsampler(factor)
-                                                for factor in subsamples])
+                self.subsample_layers = nn.ModuleList([AddSubsampler(factor)
+                                                       for factor in self.subsample_factors])
 
         if self.chunk_size_left > 0:
             assert self.chunk_size_left % self._factor == 0
@@ -296,6 +293,7 @@ class TransformerEncoder(EncoderBase):
 
         # for streaming inference
         self.reset_cache()
+        self.cache_sizes = self.calculate_cache_size()
 
     @staticmethod
     def add_args(parser, args):
@@ -408,25 +406,36 @@ class TransformerEncoder(EncoderBase):
 
         """
         if cache[0] is not None:
-            cache_size = self._total_chunk_size_left()
             for lth in range(self.n_layers):
+                cache_size = self.cache_sizes[lth]
                 if cache[lth]['input_san'].size(1) > cache_size:
                     cache[lth]['input_san'] = cache[lth]['input_san'][:, -cache_size:]
-                if self.subsample is not None and self.subsample[lth].factor > 1:
-                    cache_size //= self.subsample[lth].factor
         return cache
+
+    def calculate_cache_size(self):
+        """Calculate the maximum cache size per layer."""
+        cache_size = self._total_chunk_size_left()  # after CNN subsampling
+        N_l = self.chunk_size_left // self.conv_factor
+        cache_sizes = []
+        for lth in range(self.n_layers):
+            cache_sizes.append(cache_size)
+            if self.lc_bidir:
+                cache_size = max(0, cache_size - N_l)
+                N_l //= self.subsample_factors[lth]
+            cache_size //= self.subsample_factors[lth]
+            # TODO: add left context option for unidirectional encoder
+        return cache_sizes
 
     def _total_chunk_size_left(self):
         """Calculate the total left context size accumulated by layer depth.
            This corresponds to the frame length after CNN subsampling.
         """
-        conv_factor = self.conv.subsampling_factor if self.conv is not None else 1
         if self.streaming_type == 'reshape':
-            return self.chunk_size_left // conv_factor
+            return self.chunk_size_left // self.conv_factor
         elif self.streaming_type == 'mask':
-            return (self.chunk_size_left // conv_factor) * self.n_layers
+            return (self.chunk_size_left // self.conv_factor) * self.n_layers
         elif self.unidir:
-            return 1000 // conv_factor
+            return 10000 // self.conv_factor
         else:
             return None
 
@@ -499,7 +508,9 @@ class TransformerEncoder(EncoderBase):
             eouts['ys']['xlens'] = xlens
             return eouts
 
-        if not streaming:
+        if streaming:
+            self.cache = self.truncate_cache(self.cache)
+        else:
             self.reset_cache()
         n_cache = self.cache[0]['input_san'].size(1) if streaming and self.cache[0] is not None else 0
 
@@ -513,12 +524,12 @@ class TransformerEncoder(EncoderBase):
         new_cache = [None] * self.n_layers
         if lc_bidir:
             # chunkwise streaming encoder
-            if self.streaming_type == 'reshape':
-                xx_mask = None  # NOTE: no mask to avoid masking all frames in a chunk
-            elif self.streaming_type == 'mask':
+            if self.streaming_type == 'mask':
                 if streaming:
                     n_chunks = math.ceil((xlens.max().item() + n_cache) / N_c)  # including cache
                 xx_mask = make_chunkwise_san_mask(xs, xlens + n_cache, N_l, N_c, n_chunks)
+            else:
+                xx_mask = None  # NOTE: no mask to avoid masking all frames in a chunk
             for lth, layer in enumerate(self.layers):
                 xs, cache = layer(xs, xx_mask, cache=self.cache[lth],
                                   pos_embs=rel_pos_embs, rel_bias=(self.u_bias, self.v_bias))
@@ -541,18 +552,25 @@ class TransformerEncoder(EncoderBase):
                         self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
                     self.data_dict['elens%d' % lth] = tensor2np(xlens)
 
-                if lth < len(self.layers) - 1 and self.subsample is not None and self.subsample[lth].factor > 1:
-                    xs, xlens = self.subsample[lth](xs, xlens)
-                    N_l = max(0, N_l // self.subsample[lth].factor)
-                    N_c //= self.subsample[lth].factor
-                    N_r //= self.subsample[lth].factor
-                    n_cache //= self.subsample[lth].factor
-                    if self.pe_type in ['relative', 'relative_xl']:
-                        xs, rel_pos_embs = self.pos_emb(xs, n_cache=n_cache)
-                    if self.streaming_type == 'mask':
-                        xx_mask = make_chunkwise_san_mask(xs, xlens + n_cache, N_l, N_c, n_chunks)
-                    elif self.streaming_type == 'reshape' and xx_mask is not None:
-                        xx_mask = None  # NOTE: no mask to avoid masking all frames in a chunk
+                if lth < len(self.layers) - 1:
+                    if self.subsample_factors[lth] > 1:
+                        xs, xlens = self.subsample_layers[lth](xs, xlens)
+                        N_l = max(0, N_l // self.subsample_factors[lth])
+                        N_c //= self.subsample_factors[lth]
+                        N_r //= self.subsample_factors[lth]
+                    if streaming:
+                        # This is necessary at every layer during streaming inference because of different cache sizes
+                        n_cache = self.cache[lth + 1]['input_san'].size(
+                            1) if self.cache[lth + 1] is not None else 0
+                        if self.pe_type in ['relative', 'relative_xl']:
+                            xs, rel_pos_embs = self.pos_emb(xs, n_cache=n_cache)
+                        if self.streaming_type == 'mask':
+                            xx_mask = make_chunkwise_san_mask(xs, xlens + n_cache, N_l, N_c, n_chunks)
+                    elif self.subsample_factors[lth] > 1:
+                        if self.pe_type in ['relative', 'relative_xl']:
+                            xs, rel_pos_embs = self.pos_emb(xs)
+                        if self.streaming_type == 'mask':
+                            xx_mask = make_chunkwise_san_mask(xs, xlens, N_l, N_c, n_chunks)
 
             # Extract the center region
             if self.streaming_type == 'reshape':
@@ -585,14 +603,21 @@ class TransformerEncoder(EncoderBase):
                         return eouts
 
                 if lth < len(self.layers) - 1:
-                    if self.subsample is not None and self.subsample[lth].factor > 1:
-                        xs, xlens = self.subsample[lth](xs, xlens)
-                        n_cache //= self.subsample[lth].factor
+                    if self.subsample_factors[lth] > 1:
+                        xs, xlens = self.subsample_layers[lth](xs, xlens)
+                    if streaming:
+                        # This is necessary at every layer during streaming inference because of different cache sizes
+                        n_cache = self.cache[lth + 1]['input_san'].size(
+                            1) if streaming and self.cache[lth + 1] is not None else 0
                         if self.pe_type in ['relative', 'relative_xl']:
                             xs, rel_pos_embs = self.pos_emb(xs, n_cache=n_cache)
                         xx_mask = make_san_mask(xs, xlens + n_cache, unidir, self.lookaheads[lth + 1])
-                    elif self.lookaheads[lth] != self.lookaheads[lth + 1]:
-                        xx_mask = make_san_mask(xs, xlens + n_cache, unidir, self.lookaheads[lth + 1])
+                    else:
+                        if self.subsample_factors[lth] > 1:
+                            if self.pe_type in ['relative', 'relative_xl']:
+                                xs, rel_pos_embs = self.pos_emb(xs)
+                        if self.lookaheads[lth] != self.lookaheads[lth + 1]:
+                            xx_mask = make_san_mask(xs, xlens + n_cache, unidir, self.lookaheads[lth + 1])
 
         xs = self.norm_out(xs)
 
@@ -683,3 +708,6 @@ def make_chunkwise_san_mask(xs, xlens, N_l, N_c, n_chunks):
         xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
         xx_mask[:, offset:offset + N_c, offset + N_c:] = 0
     return xx_mask
+
+
+s
