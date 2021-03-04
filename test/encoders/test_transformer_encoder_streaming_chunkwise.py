@@ -68,8 +68,8 @@ def make_args_conformer(**kwargs):
         input_dim=80,
         enc_type='conv_conformer',
         n_heads=4,
-        kernel_size=3,
-        normalization='batch_norm',
+        kernel_size=7,
+        normalization='layer_norm',
         n_layers=3,
         n_layers_sub1=0,
         n_layers_sub2=0,
@@ -116,16 +116,14 @@ def make_args_conformer(**kwargs):
         # no CNN
         ({'enc_type': 'uni_transformer', 'chunk_size_current': "1"}),
         ({'enc_type': 'uni_transformer', 'chunk_size_current': "4"}),
-        ({'enc_type': 'uni_conformer', 'chunk_size_current': "1", 'kernel_size': 3}),
-        ({'enc_type': 'uni_conformer', 'chunk_size_current': "1", 'kernel_size': 7}),
-        ({'enc_type': 'uni_conformer', 'chunk_size_current': "4", 'kernel_size': 7}),
-        ({'enc_type': 'uni_conformer', 'chunk_size_current': "1", 'kernel_size': 7,
+        ({'enc_type': 'uni_conformer', 'chunk_size_current': "1"}),
+        ({'enc_type': 'uni_conformer', 'chunk_size_current': "4"}),
+        ({'enc_type': 'uni_conformer', 'chunk_size_current': "1",
           'pe_type': 'relative_xl'}),
-        ({'enc_type': 'uni_conformer', 'chunk_size_current': "4", 'kernel_size': 7,
+        ({'enc_type': 'uni_conformer', 'chunk_size_current': "4",
           'pe_type': 'relative_xl'}),
-        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "1", 'kernel_size': 3}),
-        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "1", 'kernel_size': 7}),
-        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "4", 'kernel_size': 7}),
+        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "1"}),
+        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "4"}),
         # no CNN, frame stacking
         ({'enc_type': 'uni_transformer', 'n_stacks': 3, 'chunk_size_current': "3"}),
         # LC-Transformer
@@ -202,7 +200,7 @@ def test_forward_streaming_chunkwise(args):
     unidir = 'uni' in args['enc_type']
 
     batch_size = 1
-    xmaxs = [t for t in range(164, 192, 3)]
+    xmaxs = [t for t in range(132, 164, 3)]
     device = "cpu"
     atol = 1e-05
 
