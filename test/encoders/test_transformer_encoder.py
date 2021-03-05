@@ -113,7 +113,7 @@ def make_args(**kwargs):
         ({'subsample': "1_2_1", 'subsample_type': 'drop'}),
         ({'subsample': "1_2_1", 'subsample_type': 'concat'}),
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool'}),
-        ({'subsample': "1_2_1", 'subsample_type': 'conv1d'}),
+        ({'subsample': "1_2_1", 'subsample_type': '1dconv'}),
         ({'subsample': "1_2_1", 'subsample_type': 'add'}),
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool', 'pe_type': 'relative'}),
         ({'subsample': "1_2_1", 'enc_type': 'conv_uni_transformer'}),
@@ -149,8 +149,7 @@ def test_forward(args):
     device = "cpu"
 
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
-    enc = module.TransformerEncoder(**args)
-    enc = enc.to(device)
+    enc = module.TransformerEncoder(**args).to(device)
 
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)

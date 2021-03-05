@@ -225,6 +225,8 @@ class TransformerEncoder(EncoderBase):
             elif subsample_type == 'add':
                 self.subsample_layers = nn.ModuleList([AddSubsampler(factor)
                                                        for factor in self.subsample_factors])
+            else:
+                raise NotImplementedError(subsample_type)
 
         if self.chunk_size_left > 0:
             assert self.chunk_size_left % self._factor == 0
