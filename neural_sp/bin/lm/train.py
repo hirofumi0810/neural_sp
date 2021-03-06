@@ -36,8 +36,6 @@ from neural_sp.trainers.optimizer import set_optimizer
 from neural_sp.trainers.reporter import Reporter
 from neural_sp.utils import mkdir_join
 
-torch.manual_seed(1)
-torch.cuda.manual_seed_all(1)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +43,9 @@ logger = logging.getLogger(__name__)
 def main():
 
     args = parse_args_train(sys.argv[1:])
+
+    torch.manual_seed(1)
+    torch.cuda.manual_seed_all(1)
 
     # Load a conf file
     if args.resume:
@@ -100,30 +101,30 @@ def main():
 
     # Set save path
     if args.resume:
-        save_path = os.path.dirname(args.resume)
-        dir_name = os.path.basename(save_path)
+        args.save_path = os.path.dirname(args.resume)
+        dir_name = os.path.basename(args.save_path)
     else:
         dir_name = set_lm_name(args)
-        save_path = mkdir_join(args.model_save_dir, '_'.join(
+        args.save_path = mkdir_join(args.model_save_dir, '_'.join(
             os.path.basename(args.train_set).split('.')[:-1]), dir_name)
-        save_path = set_save_path(save_path)  # avoid overwriting
+        args.save_path = set_save_path(args.save_path)  # avoid overwriting
 
     # Set logger
-    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
+    set_logger(os.path.join(args.save_path, 'train.log'), stdout=args.stdout)
 
     # Model setting
-    model = build_lm(args, save_path)
+    model = build_lm(args, args.save_path)
 
     if not args.resume:
         # Save conf file as a yaml file
-        save_config(args, os.path.join(save_path, 'conf.yml'))
+        save_config(args, os.path.join(args.save_path, 'conf.yml'))
 
         # Save nlsyms, dictionary, and wp_model
         if args.nlsyms:
-            shutil.copy(args.nlsyms, os.path.join(save_path, 'nlsyms.txt'))
-        shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
+            shutil.copy(args.nlsyms, os.path.join(args.save_path, 'nlsyms.txt'))
+        shutil.copy(args.dict, os.path.join(args.save_path, 'dict.txt'))
         if args.unit == 'wp':
-            shutil.copy(args.wp_model, os.path.join(save_path, 'wp.model'))
+            shutil.copy(args.wp_model, os.path.join(args.save_path, 'wp.model'))
 
         for k, v in sorted(args.items(), key=lambda x: x[0]):
             logger.info('%s: %s' % (k, str(v)))
@@ -170,25 +171,24 @@ def main():
                                      decay_type='always', decay_rate=0.5)
 
     # GPU setting
-    use_apex = args.train_dtype in ["O0", "O1", "O2", "O3"]
-    amp = None
+    args.use_apex = args.train_dtype in ["O0", "O1", "O2", "O3"]
+    amp, scaler = None, None
     if args.n_gpus >= 1:
         model.cudnn_setting(deterministic=not (is_transformer or args.cudnn_benchmark),
                             benchmark=not is_transformer and args.cudnn_benchmark)
-        model.cuda()
 
         # Mixed precision training setting
-        if use_apex:
+        if args.use_apex:
             if LooseVersion(torch.__version__) >= LooseVersion("1.6.0"):
                 scaler = torch.cuda.amp.GradScaler()
             else:
-                scaler = None
                 from apex import amp
                 model, scheduler.optimizer = amp.initialize(model, scheduler.optimizer,
                                                             opt_level=args.train_dtype)
                 amp.init()
                 if args.resume:
                     load_checkpoint(args.resume, amp=amp)
+        model.cuda()
         model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
     else:
         model = CPUWrapperLM(model)
@@ -200,100 +200,26 @@ def main():
     setproctitle(args.job_name if args.job_name else dir_name)
 
     # Set reporter
-    reporter = Reporter(save_path)
+    reporter = Reporter(args.save_path)
 
     hidden = None
     start_time_train = time.time()
-    start_time_epoch = time.time()
-    start_time_step = time.time()
-    accum_n_steps = 0
     n_steps = scheduler.n_steps * accum_grad_n_steps
     for ep in range(resume_epoch, args.n_epochs):
-        pbar_epoch = tqdm(total=len(train_set))
-
         for ys_train, is_new_epoch in train_set:
-            # Compute loss in the training set
-            accum_n_steps += 1
+            n_steps, hidden = train(model, train_set, dev_set,
+                                    scheduler, reporter, logger, args,
+                                    n_steps, accum_grad_n_steps, amp, scaler,
+                                    hidden)
 
-            if accum_n_steps == 1:
-                loss_train = 0  # moving average over gradient accumulation
-            if use_apex and scaler is not None:
-                with torch.cuda.amp.autocast():
-                    loss, hidden, observation = model(ys_train, state=hidden)
-            else:
-                loss, hidden, observation = model(ys_train, state=hidden)
-            loss = loss / accum_grad_n_steps
-            reporter.add(observation)
-            if use_apex:
-                if scaler is not None:
-                    scaler.scale(loss).backward()
-                else:
-                    with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
-                        scaled_loss.backward()
-            else:
-                loss.backward()
-            loss.detach()  # Truncate the graph
-            if accum_n_steps >= accum_grad_n_steps or is_new_epoch:
-                if args.clip_grad_norm > 0:
-                    total_norm = torch.nn.utils.clip_grad_norm_(
-                        model.module.parameters(), args.clip_grad_norm)
-                    reporter.add_tensorboard_scalar('total_norm', total_norm)
-                if use_apex and scaler is not None:
-                    scaler.step(scheduler.optimizer)
-                    scaler.update()
-                    scheduler.step(skip_optimizer=True)  # update lr only
-                else:
-                    scheduler.step()
-                scheduler.zero_grad()
-                accum_n_steps = 0
-                # NOTE: parameters are forcibly updated at the end of every epoch
-            loss_train += loss.item()
-            del loss
-            hidden = model.module.repackage_state(hidden)
-
-            pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
-            reporter.add_tensorboard_scalar('learning_rate', scheduler.lr)
-            # NOTE: loss/acc/ppl are already added in the model
-            reporter.step()
-            n_steps += 1
-            # NOTE: n_steps is different from the step counter in Noam Optimizer
-
-            if n_steps % args.print_step == 0:
-                # Compute loss in the dev set
-                ys_dev = iter(dev_set).next(bptt=args.bptt)[0]
-                loss, _, observation = model(ys_dev, state=None, is_eval=True)
-                reporter.add(observation, is_eval=True)
-                loss_dev = loss.item()
-                del loss
-                reporter.step(is_eval=True)
-
-                duration_step = time.time() - start_time_step
-                logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
-                            (n_steps, scheduler.n_epochs + train_set.epoch_detail,
-                             loss_train, loss_dev,
-                             scheduler.lr, ys_train.shape[0], duration_step / 60))
-                start_time_step = time.time()
-
-            # Save figures of loss and accuracy
-            if n_steps % (args.print_step * 10) == 0:
-                reporter.snapshot()
-                model.module.plot_attention()
-
-            if is_new_epoch:
-                break
-
-        # Save checkpoint and evaluate model per epoch
-        duration_epoch = time.time() - start_time_epoch
-        logger.info('========== EPOCH:%d (%.2f min) ==========' %
-                    (scheduler.n_epochs + 1, duration_epoch / 60))
-
+        # Save checkpoint and validate model per epoch
         if scheduler.n_epochs + 1 < args.eval_start_epoch:
             scheduler.epoch()  # lr decay
             reporter.epoch()  # plot
 
             # Save model
             scheduler.save_checkpoint(
-                model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
+                model, args.save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
         else:
             start_time_eval = time.time()
             # dev
@@ -309,7 +235,7 @@ def main():
             if scheduler.is_topk or is_transformer:
                 # Save model
                 scheduler.save_checkpoint(
-                    model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
+                    model, args.save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
 
                 # test
                 ppl_test_avg = 0.
@@ -325,8 +251,7 @@ def main():
                     logger.info('PPL (avg., ep:%d): %.2f' %
                                 (scheduler.n_epochs, ppl_test_avg / len(eval_sets)))
 
-            duration_eval = time.time() - start_time_eval
-            logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
+            logger.info('Evaluation time: %.2f min' % ((time.time() - start_time_eval) / 60))
 
             # Early stopping
             if scheduler.is_early_stop:
@@ -340,16 +265,93 @@ def main():
         if scheduler.n_epochs >= args.n_epochs:
             break
 
-        start_time_step = time.time()
-        start_time_epoch = time.time()
-
-    duration_train = time.time() - start_time_train
-    logger.info('Total time: %.2f hour' % (duration_train / 3600))
-
+    logger.info('Total time: %.2f hour' % ((time.time() - start_time_train) / 3600))
     reporter.tf_writer.close()
+
+    return args.save_path
+
+
+def train(model, train_set, dev_set, scheduler, reporter, logger, args,
+          n_steps, accum_grad_n_steps, amp, scaler, hidden):
+    """Train model for one epoch."""
+    pbar_epoch = tqdm(total=len(train_set))
+    accum_n_steps = 0  # reset at every epoch
+    start_time_step = time.time()
+    start_time_epoch = time.time()
+    for ys_train, is_new_epoch in train_set:
+        # Compute loss in the training set
+        accum_n_steps += 1
+
+        if accum_n_steps == 1:
+            loss_train = 0  # moving average over gradient accumulation
+        if args.use_apex and scaler is not None:
+            with torch.cuda.amp.autocast():
+                loss, hidden, observation = model(ys_train, state=hidden)
+        else:
+            loss, hidden, observation = model(ys_train, state=hidden)
+        loss /= accum_grad_n_steps
+        reporter.add(observation)
+        if args.use_apex:
+            if scaler is not None:
+                scaler.scale(loss).backward()
+            else:
+                with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
+                    scaled_loss.backward()
+        else:
+            loss.backward()
+        loss.detach()  # Truncate the graph
+        if accum_n_steps >= accum_grad_n_steps or is_new_epoch:
+            if args.clip_grad_norm > 0:
+                total_norm = torch.nn.utils.clip_grad_norm_(
+                    model.module.parameters(), args.clip_grad_norm)
+                reporter.add_tensorboard_scalar('total_norm', total_norm)
+            if args.use_apex and scaler is not None:
+                scaler.step(scheduler.optimizer)
+                scaler.update()
+                scheduler.step(skip_optimizer=True)  # update lr only
+            else:
+                scheduler.step()
+            scheduler.zero_grad()
+            accum_n_steps = 0
+            # NOTE: parameters are forcibly updated at the end of every epoch
+        loss_train += loss.item()
+        del loss
+        hidden = model.module.repackage_state(hidden)
+
+        pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
+        reporter.add_tensorboard_scalar('learning_rate', scheduler.lr)
+        # NOTE: loss/acc/ppl are already added in the model
+        reporter.step()
+        n_steps += 1
+        # NOTE: n_steps is different from the step counter in Noam Optimizer
+
+        if n_steps % args.print_step == 0:
+            # Compute loss in the dev set
+            ys_dev = iter(dev_set).next(bptt=args.bptt)[0]
+            loss, _, observation = model(ys_dev, state=None, is_eval=True)
+            reporter.add(observation, is_eval=True)
+            loss_dev = loss.item()
+            del loss
+            reporter.step(is_eval=True)
+
+            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
+                        (n_steps, scheduler.n_epochs + train_set.epoch_detail,
+                         loss_train, loss_dev,
+                         scheduler.lr, ys_train.shape[0], (time.time() - start_time_step) / 60))
+
+        # Save figures of loss and accuracy
+        if n_steps % (args.print_step * 10) == 0:
+            reporter.snapshot()
+            model.module.plot_attention()
+
+        if is_new_epoch:
+            break
+
+    logger.info('========== EPOCH:%d (%.2f min) ==========' %
+                (scheduler.n_epochs + 1, (time.time() - start_time_epoch) / 60))
     pbar_epoch.close()
 
-    return save_path
+    return n_steps, hidden
 
 
 if __name__ == '__main__':
