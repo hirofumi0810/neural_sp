@@ -560,10 +560,11 @@ class Speech2Text(ModelBase):
         factor = self.enc.subsampling_factor
         block_size //= factor
         assert block_size >= 1, "block_size is too small."
+        is_transformer_enc = 'former' in self.enc.enc_type
 
         hyps = None
-        best_hyp_id_stream = []
-        is_reset = True  # for the first block
+        best_hyp_id_session = []
+        is_reset = False
 
         stdout = False
 
@@ -584,10 +585,11 @@ class Speech2Text(ModelBase):
         if cache_emb and self.fwd_weight > 0:
             self.dec_fwd.cache_embedding(self.device)
 
+        self.enc.reset_cache()
         while True:
             # Encode input features block by block
-            x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feature()
-            if is_reset:
+            x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feat()
+            if not is_transformer_enc and is_reset:
                 self.enc.reset_cache()
             eout_block_dict = self.encode([x_block], 'all',
                                           streaming=True,
@@ -595,9 +597,9 @@ class Speech2Text(ModelBase):
                                           cnn_lookahead=cnn_lookahead,
                                           xlen_block=xlen_block)
             eout_block = eout_block_dict[task]['xs']
-            is_reset = False  # detect the first boundary in the same block
 
             # CTC-based VAD
+            is_reset = False
             if streaming.is_ctc_vad:
                 if self.ctc_weight_sub1 > 0:
                     ctc_probs_block = self.dec_fwd_sub1.ctc.probs(eout_block_dict['ys_sub1']['xs'])
@@ -606,55 +608,58 @@ class Speech2Text(ModelBase):
                     ctc_probs_block = self.dec_fwd.ctc.probs(eout_block)
                 is_reset = streaming.ctc_vad(ctc_probs_block, stdout=stdout)
 
-            # Truncate the most right frames
+            # Truncate the most right frames based on VAD
             if is_reset and not is_last_block and streaming.bd_offset >= 0:
                 eout_block = eout_block[:, :streaming.bd_offset]
-            streaming.cache_eout(eout_block)
 
-            # Block-synchronous decoding
-            if ctc_weight == 1 or self.ctc_weight == 1:
-                end_hyps, hyps = self.dec_fwd.ctc.beam_search_block_sync(
-                    eout_block, params, helper, idx2token, hyps, lm)
-            elif isinstance(self.dec_fwd, RNNT):
-                end_hyps, hyps = self.dec_fwd.beam_search_block_sync(
-                    eout_block, params, helper, idx2token, hyps, lm)
-            elif isinstance(self.dec_fwd, RNNDecoder):
-                for i in range(math.ceil(eout_block.size(1) / block_size)):
-                    eout_block_i = eout_block[:, i * block_size:(i + 1) * block_size]
-                    end_hyps, hyps, _ = self.dec_fwd.beam_search_block_sync(
-                        eout_block_i, params, helper, idx2token, hyps, lm)
-            elif isinstance(self.dec_fwd, TransformerDecoder):
-                raise NotImplementedError
-            else:
-                raise NotImplementedError(self.dec_fwd)
+            if eout_block.size(1) > 0:
+                streaming.cache_eout(eout_block)
 
-            merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'], reverse=True)
-            if len(merged_hyps) > 0:
-                best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
+                # Block-synchronous decoding
+                if ctc_weight == 1 or self.ctc_weight == 1:
+                    end_hyps, hyps = self.dec_fwd.ctc.beam_search_block_sync(
+                        eout_block, params, helper, idx2token, hyps, lm)
+                elif isinstance(self.dec_fwd, RNNT):
+                    end_hyps, hyps = self.dec_fwd.beam_search_block_sync(
+                        eout_block, params, helper, idx2token, hyps, lm)
+                elif isinstance(self.dec_fwd, RNNDecoder):
+                    for i in range(math.ceil(eout_block.size(1) / block_size)):
+                        eout_block_i = eout_block[:, i * block_size:(i + 1) * block_size]
+                        end_hyps, hyps, _ = self.dec_fwd.beam_search_block_sync(
+                            eout_block_i, params, helper, idx2token, hyps, lm)
+                elif isinstance(self.dec_fwd, TransformerDecoder):
+                    raise NotImplementedError
+                else:
+                    raise NotImplementedError(self.dec_fwd)
 
-                if len(hyps) == 0 or (len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos):
-                    # reset beam if <eos> is generated from the best hypothesis
-                    best_hyp_id_prefix = best_hyp_id_prefix[:-1]  # exclude <eos>
-                    # Segmentation strategy 2:
-                    # If <eos> is emitted from the decoder (not CTC),
-                    # the current block is segmented.
-                    if not is_reset:
-                        streaming._bd_offset = eout_block.size(1) - 1  # TODO: fix later
+                merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'], reverse=True)
+                if len(merged_hyps) > 0:
+                    best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
+                    best_hyp_id_prefix_viz = np.array(merged_hyps[0]['hyp'][1:])
+
+                    if len(hyps) == 0 or (len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos):
+                        # reset beam if <eos> is generated from the best hypothesis
+                        best_hyp_id_prefix = best_hyp_id_prefix[:-1]  # exclude <eos>
+                        # Segmentation strategy 2:
+                        # If <eos> is emitted from the decoder (not CTC),
+                        # the current block is segmented.
+                        if not is_reset:
+                            streaming._bd_offset = eout_block.size(1) - 1  # TODO: fix later
                         is_reset = True
 
-                if len(best_hyp_id_prefix) > 0:
-                    n_frames = self.dec_fwd.ctc.n_frames if ctc_weight == 1 or self.ctc_weight == 1 else self.dec_fwd.n_frames
-                    print('\rStreaming (T:%d [10ms], offset:%d [10ms], blank:%d [10ms]): %s' %
-                          (streaming.offset + eout_block.size(1) * factor,
-                           n_frames * factor,
-                           streaming.n_blanks * factor,
-                           idx2token(best_hyp_id_prefix)))
+                    if len(best_hyp_id_prefix_viz) > 0:
+                        n_frames = self.dec_fwd.ctc.n_frames if ctc_weight == 1 or self.ctc_weight == 1 else self.dec_fwd.n_frames
+                        print('\rStreaming (T:%d [10ms], offset:%d [10ms], blank:%d [10ms]): %s' %
+                              (streaming.offset + eout_block.size(1) * factor,
+                               n_frames * factor,
+                               streaming.n_blanks * factor,
+                               idx2token(best_hyp_id_prefix_viz)))
 
             if is_reset:
 
                 # pick up the best hyp from ended and active hypotheses
                 if len(best_hyp_id_prefix) > 0:
-                    best_hyp_id_stream.extend(best_hyp_id_prefix)
+                    best_hyp_id_session.extend(best_hyp_id_prefix)
 
                 # reset
                 streaming.reset(stdout=stdout)
@@ -663,15 +668,13 @@ class Speech2Text(ModelBase):
             streaming.next_block()
             if is_last_block:
                 break
-            # next block will start from the frame next to the boundary
-            streaming.backoff(x_block, self.dec_fwd, stdout=stdout)
 
         # pick up the best hyp
         if not is_reset and len(best_hyp_id_prefix) > 0:
-            best_hyp_id_stream.extend(best_hyp_id_prefix)
+            best_hyp_id_session.extend(best_hyp_id_prefix)
 
-        if len(best_hyp_id_stream) > 0:
-            return [[np.stack(best_hyp_id_stream, axis=0)]], [None]
+        if len(best_hyp_id_session) > 0:
+            return [[np.stack(best_hyp_id_session, axis=0)]], [None]
         else:
             return [[[]]], [None]
 

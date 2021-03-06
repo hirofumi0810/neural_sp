@@ -43,7 +43,7 @@ class ConformerEncoderBlock(nn.Module):
                  dropout, dropout_att, dropout_layer,
                  layer_norm_eps, ffn_activation, param_init,
                  pe_type, clamp_len, ffn_bottleneck_dim, unidirectional,
-                 normalization='batch_norm'):
+                 normalization='layer_norm'):
         super(ConformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
@@ -93,30 +93,30 @@ class ConformerEncoderBlock(nn.Module):
         self._xx_aws = None
 
     def forward(self, xs, xx_mask=None, cache=None,
-                pos_embs=None, u_bias=None, v_bias=None):
+                pos_embs=None, rel_bias=(None, None)):
         """Conformer encoder layer definition.
 
         Args:
             xs (FloatTensor): `[B, T (query), d_model]`
             xx_mask (ByteTensor): `[B, T (query), T (key)]`
             cache (dict):
-                input_san: `[B, n_hist, d_model]`
-                input_conv: `[B, n_hist, d_model]`
-                output: `[B, n_hist, d_model]`
+                input_san: `[B, n_cache, d_model]`
+                input_conv: `[B, n_cache, d_model]`
             pos_embs (LongTensor): `[T (query), 1, d_model]`
-            u_bias (FloatTensor): global parameter for relative positional encoding
-            v_bias (FloatTensor): global parameter for relative positional encoding
+            rel_bias (tuple):
+                u_bias (FloatTensor): global parameter for relative positional encoding
+                v_bias (FloatTensor): global parameter for relative positional encoding
         Returns:
             xs (FloatTensor): `[B, T (query), d_model]`
             new_cache (dict):
-                input_san: `[B, n_hist+T, d_model]`
-                input_conv: `[B, n_hist+T, d_model]`
-                output: `[B, T (query), d_model]`
+                input_san: `[B, n_cache+T, d_model]`
+                input_conv: `[B, n_cache+T, d_model]`
 
         """
         self.reset_visualization()
         new_cache = {}
         qlen = xs.size(1)
+        u_bias, v_bias = rel_bias
 
         # LayerDrop
         if self.dropout_layer > 0:
@@ -162,10 +162,8 @@ class ConformerEncoderBlock(nn.Module):
         # cache for convolution
         if cache is not None:
             xs = torch.cat([cache['input_conv'], xs], dim=1)
+            xs = xs[:, -(self.conv_context + qlen - 1):]  # restrict to kernel size
         new_cache['input_conv'] = xs
-        # restrict to kernel size
-        if cache is not None:
-            xs = xs[:, -(self.conv_context + qlen - 1):]
 
         xs = self.conv(xs)
         if cache is not None:
@@ -180,7 +178,5 @@ class ConformerEncoderBlock(nn.Module):
         xs = self.feed_forward(xs)
         xs = self.fc_factor * self.dropout(xs) + residual  # Macaron FFN
         xs = self.norm5(xs)  # this is important for performance
-
-        new_cache['output'] = xs
 
         return xs, new_cache

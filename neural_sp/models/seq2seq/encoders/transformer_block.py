@@ -77,28 +77,28 @@ class TransformerEncoderBlock(nn.Module):
         self._xx_aws = None
 
     def forward(self, xs, xx_mask=None, cache=None,
-                pos_embs=None, u_bias=None, v_bias=None):
+                pos_embs=None, rel_bias=(None, None)):
         """Transformer encoder layer definition.
 
         Args:
             xs (FloatTensor): `[B, T (query), d_model]`
             xx_mask (ByteTensor): `[B, T (query), T (key)]`
             cache (dict):
-                input_san: `[B, n_hist, d_model]`
-                output: `[B, n_hist, d_model]`
+                input_san: `[B, n_cache, d_model]`
             pos_embs (LongTensor): `[T (query), 1, d_model]`
-            u_bias (FloatTensor): global parameter for relative positional encoding
-            v_bias (FloatTensor): global parameter for relative positional encoding
+            rel_bias (tuple):
+                u_bias (FloatTensor): global parameter for relative positional encoding
+                v_bias (FloatTensor): global parameter for relative positional encoding
         Returns:
             xs (FloatTensor): `[B, T (query), d_model]`
             new_cache (dict):
-                input_san: `[B, n_hist+T, d_model]`
-                output: `[B, T (query), d_model]`
+                input_san: `[B, n_cache+T, d_model]`
 
         """
         self.reset_visualization()
         new_cache = {}
         qlen = xs.size(1)
+        u_bias, v_bias = rel_bias
 
         # LayerDrop
         if self.dropout_layer > 0:
@@ -137,7 +137,5 @@ class TransformerEncoderBlock(nn.Module):
         xs = self.norm2(xs)  # pre-norm
         xs = self.feed_forward(xs)
         xs = self.dropout(xs) + residual
-
-        new_cache['output'] = xs
 
         return xs, new_cache

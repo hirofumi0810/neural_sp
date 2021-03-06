@@ -25,13 +25,13 @@ class CausalConv1d(nn.Module):
     """
 
     def __init__(self, in_channels, out_channels, kernel_size, dilation=1,
-                 param_init=''):
+                 groups=1, param_init=''):
 
         super().__init__()
 
         self.padding = (kernel_size - 1) * dilation
         self.conv1d = nn.Conv1d(in_channels, out_channels, kernel_size,
-                                padding=self.padding, dilation=dilation)
+                                padding=self.padding, dilation=dilation, groups=groups)
 
         if param_init == 'xavier_uniform':
             self.reset_parameters_xavier_uniform()
@@ -42,13 +42,15 @@ class CausalConv1d(nn.Module):
 
     def reset_parameters_xavier_uniform(self):
         """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' %
+                    self.__class__.__name__)
         for n, p in self.named_parameters():
             init_with_xavier_uniform(n, p)
 
     def reset_parameters_lecun(self, param_init=0.1):
         """Initialize parameters with lecun style.."""
-        logger.info('===== Initialize %s with lecun style =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with lecun style =====' %
+                    self.__class__.__name__)
         for n, p in self.named_parameters():
             init_with_lecun_normal(n, p, param_init)
 

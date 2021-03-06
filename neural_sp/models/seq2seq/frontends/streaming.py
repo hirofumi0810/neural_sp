@@ -110,8 +110,9 @@ class Streaming(object):
 
     def next_block(self):
         self._offset += self.N_c
+        self._bd_offset = -1  # reset
 
-    def extract_feature(self):
+    def extract_feat(self):
         """Slice acoustic features.
 
         Returns:
@@ -153,7 +154,6 @@ class Streaming(object):
                 zero_pad = np.zeros(((N_l + N_c + N_r) - len(x_block), self.input_dim)).astype(np.float32)
                 x_block = np.concatenate([x_block, zero_pad], axis=0)
 
-        self._bd_offset = -1  # reset
         self._n_accum_frames += min(self.N_c, xlen_block)
 
         xlen_block = max(xlen_block, self._factor)  # to avoid elen=0 after subsampling
@@ -223,14 +223,3 @@ class Streaming(object):
             print('--- Segment (%d >= %d) ---' % (n_blanks_tmp * self._factor, self.BLANK_THRESHOLD))
 
         return is_reset
-
-    def backoff(self, x_block, decoder, stdout=False):
-        if 0 <= self._bd_offset * self._factor < self.N_c - 1:
-            # boundary located in the middle of the current block
-            decoder.n_frames = 0
-            offset_prev = self._offset
-            self._offset = self._offset - x_block[(self._bd_offset + 1) * self._factor:self.N_c].shape[0]
-            if stdout:
-                print('Back %d frames (%d -> %d)' %
-                      (x_block[(self._bd_offset + 1) * self._factor:self.N_c].shape[0],
-                       offset_prev, self._offset))
