@@ -3,12 +3,15 @@
 
 """Reporter during training."""
 
-from tensorboardX import SummaryWriter
+import csv
+import glob
 import os
 import numpy as np
 from matplotlib import pyplot as plt
 import logging
 import matplotlib
+from tensorboardX import SummaryWriter
+
 matplotlib.use('Agg')
 
 plt.style.use('ggplot')
@@ -20,34 +23,30 @@ green = '#82b74b'
 logger = logging.getLogger(__name__)
 
 
-class Reporter(object):
-    """"Report loss, accuracy etc. during training.
+class Reporter:
+    """Report loss, accuracy etc. during training."""
 
-    Args:
-        save_path (str):
-
-    """
-
-    def __init__(self, save_path):
-        self.save_path = save_path
+    def __init__(self, args, model, use_tensorboard=True):
+        self.save_path = args.save_path
 
         # tensorboard
-        self.tf_writer = SummaryWriter(save_path)
+        if use_tensorboard:
+            self.tf_writer = SummaryWriter(args.save_path)
+        else:
+            self.tf_writer = None
 
-        # report per step
-        self._step = 0
         self.obsv_train = {'loss': {}, 'acc': {}, 'ppl': {}}
         self.obsv_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
         self.obsv_dev = {'loss': {}, 'acc': {}, 'ppl': {}}
-        self.steps = []
-
-        # report per epoch
-        self._epoch = 0
         self.obsv_eval = []
+
+        self._step = 0
+        self._epoch = 0
+        self.steps = []
         self.epochs = []
 
-    def add(self, observation, is_eval=False):
-        """Restore values per step.
+    def add_observation(self, observation, is_eval=False):
+        """Restore observation per step.
 
         Args:
             observation (dict):
@@ -57,7 +56,7 @@ class Reporter(object):
         for k, v in observation.items():
             if v is None:
                 continue
-            metric, name = k.split('.')
+            metric, name = k.split('.')  # e.g., loss-ctc, acc-att
             # NOTE: metric: loss, acc, ppl
 
             if v == float("inf") or v == -float("inf"):
@@ -67,38 +66,60 @@ class Reporter(object):
                 # average for training
                 if name not in self.obsv_train[metric].keys():
                     self.obsv_train[metric][name] = []
-                self.obsv_train[metric][name].append(
-                    np.mean(self.obsv_train_local[metric][name]))
-                logger.info('%s (train): %.3f' % (k, np.mean(self.obsv_train_local[metric][name])))
+                train_local_avg = np.mean(self.obsv_train_local[metric][name])
+                self.obsv_train[metric][name].append(train_local_avg)
+                logger.info('%s (train): %.3f' % (k, train_local_avg))
 
                 if name not in self.obsv_dev[metric].keys():
                     self.obsv_dev[metric][name] = []
                 self.obsv_dev[metric][name].append(v)
                 logger.info('%s (dev): %.3f' % (k, v))
-                self.add_tensorboard_scalar('dev' + '/' + metric + '/' + name, v)
+                self.add_scalar('dev' + '/' + metric + '/' + name, v, is_eval=True)
             else:
                 if name not in self.obsv_train_local[metric].keys():
                     self.obsv_train_local[metric][name] = []
                 self.obsv_train_local[metric][name].append(v)
-                self.add_tensorboard_scalar('train' + '/' + metric + '/' + name, v)
+                self.add_scalar('train' + '/' + metric + '/' + name, v)
 
-    def add_tensorboard_scalar(self, key, value):
+    def add_scalar(self, key, value, is_eval=False):
         """Add scalar value to tensorboard."""
-        self.tf_writer.add_scalar(key, value, self._step)
+        if self.tf_writer is not None and value is not None:
+            self.tf_writer.add_scalar(key, value, self._step)
 
     def add_tensorboard_histogram(self, key, value):
         """Add histogram value to tensorboard."""
-        self.tf_writer.add_histogram(key, value, self._step)
+        if self.tf_writer is not None:
+            self.tf_writer.add_histogram(key, value, self._step)
+
+    def resume(self, n_steps, n_epochs):
+        self._step = n_steps
+        self._epoch = n_epochs
+
+        # Load CSV files
+        for path in glob.glob(os.path.join(self.save_path, '*.csv')):
+            if os.path.isfile(path):
+                metric, name = os.path.basename(path).split('.')[0].split('-')
+
+                with open(path, "r") as f:
+                    reader = csv.DictReader(f, delimiter=",",
+                                            fieldnames=['step', 'train', 'dev'])
+                    lines = [row for row in reader if int(float(row['step'])) <= n_steps]
+                    # [('step', val), ('train', val), ('dev', val)]
+
+                    self.steps = [int(float(line['step'])) for line in lines]
+                    self.obsv_train[metric][name] = [float(line['train']) for line in lines]
+                    self.obsv_dev[metric][name] = [float(line['dev']) for line in lines]
 
     def step(self, is_eval=False):
-        self._step += 1
         if is_eval:
             self.steps.append(self._step)
+            self.obsv_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}  # reset
+            # NOTE: don't reset in add() because of multiple tasks
+        else:
+            self._step += 1
+            # NOTE: different from the step counter in Noam Optimizer
 
-            # reset
-            self.obsv_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
-
-    def epoch(self, metric=None, name='wer'):
+    def epoch(self, metric=None, name='edit_distance'):
         self._epoch += 1
         if metric is None:
             return
@@ -142,11 +163,12 @@ class Reporter(object):
                 upper = max(upper, max(self.obsv_dev[metric][k]))
 
                 # Save as csv file
-                if os.path.isfile(os.path.join(self.save_path, metric + '-' + k + ".csv")):
-                    os.remove(os.path.join(self.save_path, metric + '-' + k + ".csv"))
+                csv_path = os.path.join(self.save_path, metric + '-' + k + ".csv")
+                if os.path.isfile(csv_path):
+                    os.remove(csv_path)
                 loss_graph = np.column_stack(
                     (self.steps, self.obsv_train[metric][k], self.obsv_dev[metric][k]))
-                np.savetxt(os.path.join(self.save_path, metric + '-' + k + ".csv"), loss_graph, delimiter=",")
+                np.savetxt(csv_path, loss_graph, delimiter=",")  # no header
 
             if upper > 1:
                 upper = min(upper + 10, 300)  # for CE, CTC loss
@@ -155,6 +177,10 @@ class Reporter(object):
             plt.ylabel(metric, fontsize=12)
             plt.ylim([0, upper])
             plt.legend(loc="upper right", fontsize=12)
-            if os.path.isfile(os.path.join(self.save_path, metric + ".png")):
-                os.remove(os.path.join(self.save_path, metric + ".png"))
-            plt.savefig(os.path.join(self.save_path, metric + ".png"))
+            png_path = os.path.join(self.save_path, metric + ".png")
+            if os.path.isfile(png_path):
+                os.remove(png_path)
+            plt.savefig(png_path)
+
+    def close(self):
+        self.tf_writer.close()
