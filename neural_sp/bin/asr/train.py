@@ -284,7 +284,10 @@ def main():
     setproctitle(args.job_name if args.job_name else dir_name)
 
     # Set reporter
-    reporter = Reporter(args.save_path)
+    reporter = Reporter(args, model)
+    n_steps = scheduler.n_steps * accum_grad_n_steps
+    if args.resume:
+        reporter.resume(n_steps, resume_epoch)
 
     # Define tasks
     if args.mtl_per_batch:
@@ -313,12 +316,10 @@ def main():
         model.module.trigger_quantity_loss()
 
     start_time_train = time.time()
-    n_steps = scheduler.n_steps * accum_grad_n_steps
     for ep in range(resume_epoch, args.n_epochs):
-        n_steps = train(model, train_set, dev_set, eval_sets,
-                        scheduler, reporter, logger, args,
-                        tasks, n_steps, accum_grad_n_steps, amp, scaler,
-                        teacher, teacher_lm)
+        train(model, train_set, dev_set, eval_sets,
+              scheduler, reporter, logger, args,
+              tasks, accum_grad_n_steps, amp, scaler, teacher, teacher_lm)
 
         # Save checkpoint and validate model per epoch
         if scheduler.n_epochs + 1 < args.eval_start_epoch:
@@ -334,6 +335,7 @@ def main():
             metric_dev = validate([model.module], dev_set, args, scheduler.n_epochs + 1, logger)
             scheduler.epoch(metric_dev)  # lr decay
             reporter.epoch(metric_dev, name=args.metric)  # plot
+            reporter.add_scalar('dev/' + args.metric, metric_dev)
 
             if scheduler.is_topk or is_transformer:
                 # Save model
@@ -364,19 +366,18 @@ def main():
             model.module.trigger_quantity_loss()
 
     logger.info('Total time: %.2f hour' % ((time.time() - start_time_train) / 3600))
-    reporter.tf_writer.close()
+    reporter.close()
 
     return args.save_path
 
 
 def train(model, train_set, dev_set, eval_sets,
           scheduler, reporter, logger, args,
-          tasks, n_steps, accum_grad_n_steps, amp, scaler,
-          teacher, teacher_lm):
+          tasks, accum_grad_n_steps, amp, scaler, teacher, teacher_lm):
     """Train model for one epoch."""
     pbar_epoch = tqdm(total=len(train_set))
     session_prev = None
-    accum_n_steps = 0  # reset at every epoch
+    _accum_n_steps = 0  # reset at every epoch
     epoch_detail_prev = train_set.epoch_detail
     start_time_step = time.time()
     start_time_epoch = time.time()
@@ -385,10 +386,11 @@ def train(model, train_set, dev_set, eval_sets,
         if args.discourse_aware and batch_train['sessions'][0] != session_prev:
             model.module.reset_session()
         session_prev = batch_train['sessions'][0]
-        accum_n_steps += 1
+        _accum_n_steps += 1
 
         # Change mini-batch depending on task
-        if accum_n_steps == 1:
+        reporter.add_scalar('learning_rate', scheduler.lr)
+        if _accum_n_steps == 1:
             loss_train = 0  # moving average over gradient accumulation
         for task in tasks:
             if args.use_apex and scaler is not None:
@@ -398,10 +400,8 @@ def train(model, train_set, dev_set, eval_sets,
             else:
                 loss, observation = model(batch_train, task=task,
                                           teacher=teacher, teacher_lm=teacher_lm)
+            reporter.add_observation(observation)
             loss /= accum_grad_n_steps
-
-            # report
-            reporter.add(observation)
 
             if args.use_apex:
                 if scaler is not None:
@@ -413,11 +413,14 @@ def train(model, train_set, dev_set, eval_sets,
                 loss.backward()
 
             loss.detach()  # Truncate the graph
-            if accum_n_steps >= accum_grad_n_steps or is_new_epoch:
+            loss_train += loss.item()
+            del loss
+
+            if _accum_n_steps >= accum_grad_n_steps or is_new_epoch:
                 if args.clip_grad_norm > 0:
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         model.module.parameters(), args.clip_grad_norm)
-                    reporter.add_tensorboard_scalar('total_norm', total_norm)
+                    reporter.add_scalar('total_norm.' + task, total_norm)
                 if args.use_apex and scaler is not None:
                     scaler.step(scheduler.optimizer)
                     scaler.update()
@@ -425,27 +428,20 @@ def train(model, train_set, dev_set, eval_sets,
                 else:
                     scheduler.step()
                 scheduler.zero_grad()
-                accum_n_steps = 0
+                _accum_n_steps = 0
+                reporter.add_scalar('train/total_loss', loss_train)
                 # NOTE: parameters are forcibly updated at the end of every epoch
-            loss_train += loss.item()
-            del loss
 
         pbar_epoch.update(len(batch_train['utt_ids']))
-        reporter.add_tensorboard_scalar('learning_rate', scheduler.lr)
-        # NOTE: loss/acc/ppl are already added in the model
-        reporter.step()
-        n_steps += 1
-        # NOTE: n_steps is different from the step counter in Noam Optimizer
 
-        if n_steps % args.print_step == 0:
+        if scheduler.n_steps % args.print_step == 0:
             # Compute loss in the dev set
             batch_dev = iter(dev_set).next(batch_size=1 if 'transducer' in args.dec_type else None)[0]
-            # Change mini-batch depending on task
-            for task in tasks:
-                loss, observation = model(batch_dev, task=task, is_eval=True)
-                reporter.add(observation, is_eval=True)
-                loss_dev = loss.item()
-                del loss
+            loss, observation = model(batch_dev, task='all', is_eval=True)
+            reporter.add_observation(observation, is_eval=True)
+            loss_dev = loss.item()
+            del loss
+            reporter.add_scalar('dev/total_loss', loss_dev)
             reporter.step(is_eval=True)
 
             if args.input_type == 'speech':
@@ -455,14 +451,16 @@ def train(model, train_set, dev_set, eval_sets,
                 xlen = max(len(x) for x in batch_train['ys'])
                 ylen = max(len(y) for y in batch_train['ys_sub1'])
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.7f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
-                        (n_steps, scheduler.n_epochs + train_set.epoch_detail,
+                        (scheduler.n_steps, scheduler.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
                          scheduler.lr, len(batch_train['utt_ids']),
                          xlen, ylen, (time.time() - start_time_step) / 60))
             start_time_step = time.time()
 
+        reporter.step()
+
         # Save figures of loss and accuracy
-        if n_steps % (args.print_step * 10) == 0:
+        if scheduler.n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
             model.module.plot_attention()
             model.module.plot_ctc()
@@ -489,8 +487,6 @@ def train(model, train_set, dev_set, eval_sets,
     logger.info('========== EPOCH:%d (%.2f min) ==========' %
                 (scheduler.n_epochs + 1, (time.time() - start_time_epoch) / 60))
     pbar_epoch.close()
-
-    return n_steps
 
 
 def validate(models, dataloader, args, epoch, logger):

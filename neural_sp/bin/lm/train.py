@@ -200,17 +200,18 @@ def main():
     setproctitle(args.job_name if args.job_name else dir_name)
 
     # Set reporter
-    reporter = Reporter(args.save_path)
+    reporter = Reporter(args, model)
+    n_steps = scheduler.n_steps * accum_grad_n_steps
+    if args.resume:
+        reporter.resume(n_steps, resume_epoch)
 
     hidden = None
     start_time_train = time.time()
-    n_steps = scheduler.n_steps * accum_grad_n_steps
     for ep in range(resume_epoch, args.n_epochs):
         for ys_train, is_new_epoch in train_set:
-            n_steps, hidden = train(model, train_set, dev_set,
-                                    scheduler, reporter, logger, args,
-                                    n_steps, accum_grad_n_steps, amp, scaler,
-                                    hidden)
+            hidden = train(model, train_set, dev_set,
+                           scheduler, reporter, logger, args,
+                           accum_grad_n_steps, amp, scaler, hidden)
 
         # Save checkpoint and validate model per epoch
         if scheduler.n_epochs + 1 < args.eval_start_epoch:
@@ -229,6 +230,7 @@ def main():
             model.module.reset_length(args.bptt)
             scheduler.epoch(ppl_dev)  # lr decay
             reporter.epoch(ppl_dev, name='perplexity')  # plot
+            reporter.add_scalar('dev/perplexity', ppl_dev)
             logger.info('PPL (%s, ep:%d): %.2f' %
                         (dev_set.set, scheduler.n_epochs, ppl_dev))
 
@@ -266,31 +268,32 @@ def main():
             break
 
     logger.info('Total time: %.2f hour' % ((time.time() - start_time_train) / 3600))
-    reporter.tf_writer.close()
+    reporter.close()
 
     return args.save_path
 
 
 def train(model, train_set, dev_set, scheduler, reporter, logger, args,
-          n_steps, accum_grad_n_steps, amp, scaler, hidden):
+          accum_grad_n_steps, amp, scaler, hidden):
     """Train model for one epoch."""
     pbar_epoch = tqdm(total=len(train_set))
-    accum_n_steps = 0  # reset at every epoch
+    _accum_n_steps = 0  # reset at every epoch
     start_time_step = time.time()
     start_time_epoch = time.time()
     for ys_train, is_new_epoch in train_set:
         # Compute loss in the training set
-        accum_n_steps += 1
-
-        if accum_n_steps == 1:
+        _accum_n_steps += 1
+        reporter.add_scalar('learning_rate', scheduler.lr)
+        if _accum_n_steps == 1:
             loss_train = 0  # moving average over gradient accumulation
         if args.use_apex and scaler is not None:
             with torch.cuda.amp.autocast():
                 loss, hidden, observation = model(ys_train, state=hidden)
         else:
             loss, hidden, observation = model(ys_train, state=hidden)
+        reporter.add_observation(observation)
         loss /= accum_grad_n_steps
-        reporter.add(observation)
+
         if args.use_apex:
             if scaler is not None:
                 scaler.scale(loss).backward()
@@ -299,12 +302,16 @@ def train(model, train_set, dev_set, scheduler, reporter, logger, args,
                     scaled_loss.backward()
         else:
             loss.backward()
+
         loss.detach()  # Truncate the graph
-        if accum_n_steps >= accum_grad_n_steps or is_new_epoch:
+        loss_train += loss.item()
+        del loss
+
+        if _accum_n_steps >= accum_grad_n_steps or is_new_epoch:
             if args.clip_grad_norm > 0:
                 total_norm = torch.nn.utils.clip_grad_norm_(
                     model.module.parameters(), args.clip_grad_norm)
-                reporter.add_tensorboard_scalar('total_norm', total_norm)
+                reporter.add_scalar('total_norm', total_norm)
             if args.use_apex and scaler is not None:
                 scaler.step(scheduler.optimizer)
                 scaler.update()
@@ -312,35 +319,34 @@ def train(model, train_set, dev_set, scheduler, reporter, logger, args,
             else:
                 scheduler.step()
             scheduler.zero_grad()
-            accum_n_steps = 0
+            _accum_n_steps = 0
+            reporter.add_scalar('train/total_loss', loss_train)
             # NOTE: parameters are forcibly updated at the end of every epoch
-        loss_train += loss.item()
-        del loss
+
         hidden = model.module.repackage_state(hidden)
 
         pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
-        reporter.add_tensorboard_scalar('learning_rate', scheduler.lr)
-        # NOTE: loss/acc/ppl are already added in the model
-        reporter.step()
-        n_steps += 1
-        # NOTE: n_steps is different from the step counter in Noam Optimizer
 
-        if n_steps % args.print_step == 0:
+        if scheduler.n_steps % args.print_step == 0:
             # Compute loss in the dev set
             ys_dev = iter(dev_set).next(bptt=args.bptt)[0]
             loss, _, observation = model(ys_dev, state=None, is_eval=True)
-            reporter.add(observation, is_eval=True)
+            reporter.add_observation(observation, is_eval=True)
             loss_dev = loss.item()
             del loss
+            reporter.add_scalar('dev/total_loss', loss_dev)
             reporter.step(is_eval=True)
 
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
-                        (n_steps, scheduler.n_epochs + train_set.epoch_detail,
+                        (scheduler.n_steps, scheduler.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
                          scheduler.lr, ys_train.shape[0], (time.time() - start_time_step) / 60))
+            start_time_step = time.time()
+
+        reporter.step()
 
         # Save figures of loss and accuracy
-        if n_steps % (args.print_step * 10) == 0:
+        if scheduler.n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
             model.module.plot_attention()
 
@@ -351,7 +357,7 @@ def train(model, train_set, dev_set, scheduler, reporter, logger, args,
                 (scheduler.n_epochs + 1, (time.time() - start_time_epoch) / 60))
     pbar_epoch.close()
 
-    return n_steps, hidden
+    return hidden
 
 
 if __name__ == '__main__':
