@@ -201,8 +201,8 @@ def main():
 
     # Set reporter
     reporter = Reporter(args, model)
-    n_steps = scheduler.n_steps * accum_grad_n_steps
     if args.resume:
+        n_steps = scheduler.n_steps * accum_grad_n_steps
         reporter.resume(n_steps, resume_epoch)
 
     hidden = None
@@ -214,7 +214,7 @@ def main():
                            accum_grad_n_steps, amp, scaler, hidden)
 
         # Save checkpoint and validate model per epoch
-        if scheduler.n_epochs + 1 < args.eval_start_epoch:
+        if reporter.n_epochs + 1 < args.eval_start_epoch:
             scheduler.epoch()  # lr decay
             reporter.epoch()  # plot
 
@@ -232,7 +232,7 @@ def main():
             reporter.epoch(ppl_dev, name='perplexity')  # plot
             reporter.add_scalar('dev/perplexity', ppl_dev)
             logger.info('PPL (%s, ep:%d): %.2f' %
-                        (dev_set.set, scheduler.n_epochs, ppl_dev))
+                        (dev_set.set, reporter.n_epochs, ppl_dev))
 
             if scheduler.is_topk or is_transformer:
                 # Save model
@@ -247,11 +247,11 @@ def main():
                                            batch_size=1, bptt=args.bptt)
                     model.module.reset_length(args.bptt)
                     logger.info('PPL (%s, ep:%d): %.2f' %
-                                (eval_set.set, scheduler.n_epochs, ppl_test))
+                                (eval_set.set, reporter.n_epochs, ppl_test))
                     ppl_test_avg += ppl_test
                 if len(eval_sets) > 0:
                     logger.info('PPL (avg., ep:%d): %.2f' %
-                                (scheduler.n_epochs, ppl_test_avg / len(eval_sets)))
+                                (reporter.n_epochs, ppl_test_avg / len(eval_sets)))
 
             logger.info('Evaluation time: %.2f min' % ((time.time() - start_time_eval) / 60))
 
@@ -260,11 +260,11 @@ def main():
                 break
 
             # Convert to fine-tuning stage
-            if scheduler.n_epochs == args.convert_to_sgd_epoch:
+            if reporter.n_epochs == args.convert_to_sgd_epoch:
                 scheduler.convert_to_sgd(model, args.lr, args.weight_decay,
                                          decay_type='always', decay_rate=0.5)
 
-        if scheduler.n_epochs >= args.n_epochs:
+        if reporter.n_epochs >= args.n_epochs:
             break
 
     logger.info('Total time: %.2f hour' % ((time.time() - start_time_train) / 3600))
@@ -327,7 +327,7 @@ def train(model, train_set, dev_set, scheduler, reporter, logger, args,
 
         pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
 
-        if scheduler.n_steps % args.print_step == 0:
+        if reporter.n_steps > 0 and reporter.n_steps % args.print_step == 0:
             # Compute loss in the dev set
             ys_dev = iter(dev_set).next(bptt=args.bptt)[0]
             loss, _, observation = model(ys_dev, state=None, is_eval=True)
@@ -338,7 +338,7 @@ def train(model, train_set, dev_set, scheduler, reporter, logger, args,
             reporter.step(is_eval=True)
 
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
-                        (scheduler.n_steps, scheduler.n_epochs + train_set.epoch_detail,
+                        (reporter.n_steps, reporter.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
                          scheduler.lr, ys_train.shape[0], (time.time() - start_time_step) / 60))
             start_time_step = time.time()
@@ -346,7 +346,7 @@ def train(model, train_set, dev_set, scheduler, reporter, logger, args,
         reporter.step()
 
         # Save figures of loss and accuracy
-        if scheduler.n_steps % (args.print_step * 10) == 0:
+        if reporter.n_steps > 0 and reporter.n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
             model.module.plot_attention()
 
@@ -354,7 +354,7 @@ def train(model, train_set, dev_set, scheduler, reporter, logger, args,
             break
 
     logger.info('========== EPOCH:%d (%.2f min) ==========' %
-                (scheduler.n_epochs + 1, (time.time() - start_time_epoch) / 60))
+                (reporter.n_epochs + 1, (time.time() - start_time_epoch) / 60))
     pbar_epoch.close()
 
     return hidden
