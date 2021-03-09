@@ -45,6 +45,14 @@ class Reporter:
         self.steps = []
         self.epochs = []
 
+    @property
+    def n_steps(self):
+        return self._step
+
+    @property
+    def n_epochs(self):
+        return self._epoch
+
     def add_observation(self, observation, is_eval=False):
         """Restore observation per step.
 
