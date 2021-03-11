@@ -11,6 +11,7 @@ from matplotlib import pyplot as plt
 import logging
 import matplotlib
 from tensorboardX import SummaryWriter
+import wandb
 
 matplotlib.use('Agg')
 
@@ -34,6 +35,22 @@ class Reporter:
             self.tf_writer = SummaryWriter(args.save_path)
         else:
             self.tf_writer = None
+
+        # wandb
+        self.use_wandb = args.use_wandb
+        if self.use_wandb:
+            if args.resume and getattr(args, 'wandb_id', None) is not None:
+                id = args.wandb_id
+            else:
+                id = wandb.util.generate_id()
+                args.wandb_id = id
+            wandb.init(project=args.corpus, name=os.path.basename(args.save_path),
+                       id=id, allow_val_change=True)
+            for k, v in args.items():
+                if 'recog' in k:
+                    continue
+                setattr(wandb.config, k, v)
+            wandb.watch(model)
 
         self.obsv_train = {'loss': {}, 'acc': {}, 'ppl': {}}
         self.obsv_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
@@ -89,10 +106,17 @@ class Reporter:
                 self.obsv_train_local[metric][name].append(v)
                 self.add_scalar('train' + '/' + metric + '/' + name, v)
 
+    def _log_wandb(self):
+        """Add scalar values to wandb."""
+        if self.use_wandb:
+            wandb.log({'epoch': self._epoch}, step=self._step, commit=True)
+
     def add_scalar(self, key, value, is_eval=False):
-        """Add scalar value to tensorboard."""
+        """Add scalar value to tensorboard and wandb."""
         if self.tf_writer is not None and value is not None:
             self.tf_writer.add_scalar(key, value, self._step)
+        if self.use_wandb and value is not None:
+            wandb.log({key: value}, step=self._step, commit=False)
 
     def add_tensorboard_histogram(self, key, value):
         """Add histogram value to tensorboard."""
@@ -124,6 +148,7 @@ class Reporter:
             self.obsv_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}  # reset
             # NOTE: don't reset in add() because of multiple tasks
         else:
+            self._log_wandb()
             self._step += 1
             # NOTE: different from the step counter in Noam Optimizer
 

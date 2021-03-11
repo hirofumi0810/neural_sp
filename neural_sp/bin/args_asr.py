@@ -31,8 +31,7 @@ def parse_args_train(input_args):
 
     config = OmegaConf.load(user_args.config)
     if user_args.config2 is not None:
-        config = OmegaConf.merge(config,
-                                 OmegaConf.load(user_args.config2))
+        config = OmegaConf.merge(config, OmegaConf.load(user_args.config2))
 
     # register module specific arguments
     # encoder
@@ -119,7 +118,7 @@ def build_parser():
         config_file_parser_class=configargparse.YAMLConfigFileParser,
         formatter_class=configargparse.ArgumentDefaultsHelpFormatter)
     parser.add('--config', is_config_file=True, help='config file path')
-    parser.add('--config2', is_config_file=True, default=False, nargs='?',
+    parser.add('--config2', is_config_file=True, default=None, nargs='?',
                help='another config file path to overwrite --config')
     # general
     parser.add_argument('--corpus', type=str,
@@ -141,6 +140,8 @@ def build_parser():
                         help='print to standard output during training')
     parser.add_argument('--remove_old_checkpoints', type=strtobool, default=True,
                         help='remove old checkpoints to save disk (turned off when training Transformer')
+    parser.add_argument('--use_wandb', type=strtobool, default=False,
+                        help='use wandb for reporting')
     # dataset
     parser.add_argument('--train_set', type=str,
                         help='tsv file path for the training set')
