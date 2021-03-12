@@ -142,11 +142,6 @@ def main():
     model = Speech2Text(args, args.save_path, train_set.idx2token[0])
 
     if not args.resume:
-        # Save conf file as a yaml file
-        save_config(args, os.path.join(args.save_path, 'conf.yml'))
-        if args.external_lm:
-            save_config(args.lm_conf, os.path.join(args.save_path, 'conf_lm.yml'))
-
         # Save nlsyms, dictionary, and wp_model
         if args.nlsyms:
             shutil.copy(args.nlsyms, os.path.join(args.save_path, 'nlsyms.txt'))
@@ -186,13 +181,9 @@ def main():
                     logger.info('Overwrite %s' % n)
 
     # Set optimizer
-    if args.resume:
-        resume_epoch = int(args.resume.split('-')[-1])
-        optimizer = set_optimizer(model, 'sgd' if resume_epoch > args.convert_to_sgd_epoch else args.optimizer,
-                                  args.lr, args.weight_decay)
-    else:
-        resume_epoch = 0
-        optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
+    resume_epoch = int(args.resume.split('-')[-1]) if args.resume else 0
+    optimizer = set_optimizer(model, 'sgd' if resume_epoch > args.convert_to_sgd_epoch else args.optimizer,
+                              args.lr, args.weight_decay)
 
     # Wrap optimizer by learning rate scheduler
     is_transformer = 'former' in args.enc_type or 'former' in args.dec_type or 'former' in args.dec_type_sub1
@@ -288,6 +279,13 @@ def main():
     if args.resume:
         n_steps = scheduler.n_steps * accum_grad_n_steps
         reporter.resume(n_steps, resume_epoch)
+
+    # Save conf file as a yaml file
+    if not args.resume:
+        save_config(args, os.path.join(args.save_path, 'conf.yml'))
+        if args.external_lm:
+            save_config(args.lm_conf, os.path.join(args.save_path, 'conf_lm.yml'))
+        # NOTE: save after reporter for wandb ID
 
     # Define tasks
     if args.mtl_per_batch:

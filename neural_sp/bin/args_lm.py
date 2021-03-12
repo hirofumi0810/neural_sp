@@ -92,6 +92,8 @@ def build_parser():
                         help='print to standard output')
     parser.add_argument('--remove_old_checkpoints', type=strtobool, default=True,
                         help='remove old checkpoints to save disk (turned off when training Transformer')
+    parser.add_argument('--use_wandb', type=strtobool, default=False,
+                        help='use wandb for reporting')
     # dataset
     parser.add_argument('--train_set', type=str,
                         help='tsv file path for the training set')

@@ -25,6 +25,7 @@ requirements = {
         'tensorboardX>=2.0',
         'tqdm>=4.42.0',
         'omegaconf>=2.0.6',
+        'wandb>=0.10.22',
     ],
     'setup': [
 

@@ -116,9 +116,6 @@ def main():
     model = build_lm(args, args.save_path)
 
     if not args.resume:
-        # Save conf file as a yaml file
-        save_config(args, os.path.join(args.save_path, 'conf.yml'))
-
         # Save nlsyms, dictionary, and wp_model
         if args.nlsyms:
             shutil.copy(args.nlsyms, os.path.join(args.save_path, 'nlsyms.txt'))
@@ -138,13 +135,9 @@ def main():
         logger.info(model)
 
     # Set optimizer
-    if args.resume:
-        resume_epoch = int(args.resume.split('-')[-1])
-        optimizer = set_optimizer(model, 'sgd' if resume_epoch > args.convert_to_sgd_epoch else args.optimizer,
-                                  args.lr, args.weight_decay)
-    else:
-        resume_epoch = 0
-        optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
+    resume_epoch = int(args.resume.split('-')[-1]) if args.resume else 0
+    optimizer = set_optimizer(model, 'sgd' if resume_epoch > args.convert_to_sgd_epoch else args.optimizer,
+                              args.lr, args.weight_decay)
 
     # Wrap optimizer by learning rate scheduler
     is_transformer = args.lm_type in ['transformer', 'transformer_xl']
@@ -204,6 +197,11 @@ def main():
     if args.resume:
         n_steps = scheduler.n_steps * accum_grad_n_steps
         reporter.resume(n_steps, resume_epoch)
+
+    # Save conf file as a yaml file
+    if not args.resume:
+        save_config(args, os.path.join(args.save_path, 'conf.yml'))
+        # NOTE: save after reporter for wandb ID
 
     hidden = None
     start_time_train = time.time()
