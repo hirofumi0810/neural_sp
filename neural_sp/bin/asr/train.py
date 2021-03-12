@@ -56,8 +56,8 @@ def main():
 
     args = parse_args_train(sys.argv[1:])
 
-    torch.manual_seed(1)
-    torch.cuda.manual_seed_all(1)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
 
     args_init = copy.deepcopy(args)
     args_teacher = copy.deepcopy(args)

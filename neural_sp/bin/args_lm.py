@@ -1,7 +1,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Args option for the LM task."""
+"""Args options for the LM task."""
 
 import configargparse
 from distutils.util import strtobool
@@ -10,6 +10,7 @@ from omegaconf import OmegaConf
 import os
 
 from neural_sp.bin.train_utils import load_config
+from neural_sp.bin.args_common import add_args_common
 
 logger = logging.getLogger(__name__)
 
@@ -71,45 +72,7 @@ def build_parser():
     parser = configargparse.ArgumentParser(
         config_file_parser_class=configargparse.YAMLConfigFileParser,
         formatter_class=configargparse.ArgumentDefaultsHelpFormatter)
-    parser.add('--config', is_config_file=True, help='config file path')
-    # general
-    parser.add_argument('--corpus', type=str,
-                        help='corpus name')
-    parser.add_argument('--n_gpus', type=int, default=1,
-                        help='number of GPUs (0 indicates CPU)')
-    parser.add_argument('--cudnn_benchmark', type=strtobool, default=True,
-                        help='use CuDNN benchmark mode')
-    parser.add_argument("--train_dtype", default="float32",
-                        choices=["float16", "float32", "float64", "O0", "O1", "O2", "O3"],
-                        help="Data type for training")
-    parser.add_argument('--model_save_dir', type=str, default=False,
-                        help='directory to save a model')
-    parser.add_argument('--resume', type=str, default=False, nargs='?',
-                        help='model path to resume training')
-    parser.add_argument('--job_name', type=str, default=False,
-                        help='job name')
-    parser.add_argument('--stdout', type=strtobool, default=False,
-                        help='print to standard output')
-    parser.add_argument('--remove_old_checkpoints', type=strtobool, default=True,
-                        help='remove old checkpoints to save disk (turned off when training Transformer')
-    parser.add_argument('--use_wandb', type=strtobool, default=False,
-                        help='use wandb for reporting')
-    # dataset
-    parser.add_argument('--train_set', type=str,
-                        help='tsv file path for the training set')
-    parser.add_argument('--dev_set', type=str,
-                        help='tsv file path for the development set')
-    parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
-                        help='tsv file paths for the evaluation sets')
-    parser.add_argument('--nlsyms', type=str, default=False, nargs='?',
-                        help='non-linguistic symbols file path')
-    parser.add_argument('--dict', type=str,
-                        help='dictionary file path')
-    parser.add_argument('--unit', type=str, default='word',
-                        choices=['word', 'wp', 'char', 'word_char'],
-                        help='output unit')
-    parser.add_argument('--wp_model', type=str, default=False, nargs='?',
-                        help='wordpiece model path')
+    parser = add_args_common(parser)
     # features
     parser.add_argument('--min_n_tokens', type=int, default=1,
                         help='minimum number of input tokens')
