@@ -475,6 +475,9 @@ class Speech2Text(ModelBase):
             trigger_points (np.ndarray): `[B, L]`
 
         """
+        from neural_sp.models.seq2seq.decoders.ctc import CTCForcedAligner
+        forced_aligner = CTCForcedAligner()
+
         self.eval()
         with torch.no_grad():
             eout_dict = self.encode(xs, 'ys')
@@ -482,7 +485,7 @@ class Speech2Text(ModelBase):
             ctc = getattr(self, 'dec_fwd').ctc
             logits = ctc.output(eout_dict[task]['xs'])
             ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
-            trigger_points = ctc.forced_align(logits, eout_dict[task]['xlens'], ys, ylens)
+            trigger_points = forced_aligner(logits, eout_dict[task]['xlens'], ys, ylens)
 
         return tensor2np(trigger_points)
 
