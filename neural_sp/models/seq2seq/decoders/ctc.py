@@ -607,10 +607,27 @@ def _flip_path_probability(cum_log_prob, xlens, path_lens):
                                    rotate_label], dims=[0, 2])
 
 
+def _computes_transition(seq_log_prob, same_transition, outside,
+                         cum_log_prob, log_prob_yt, skip_accum=False):
+    bs, max_path_len = seq_log_prob.size()
+    mat = seq_log_prob.new_zeros(3, bs, max_path_len).fill_(LOG_0)
+    mat[0, :, :] = seq_log_prob
+    mat[1, :, 1:] = seq_log_prob[:, :-1]
+    mat[2, :, 2:] = seq_log_prob[:, :-2]
+    # disable transition between the same symbols
+    # (including blank-to-blank)
+    mat[2, :, 2:][same_transition] = LOG_0
+    seq_log_prob = torch.logsumexp(mat, dim=0)  # overwrite
+    seq_log_prob[outside] = LOG_0
+    if not skip_accum:
+        cum_log_prob += seq_log_prob
+    seq_log_prob += log_prob_yt
+    return seq_log_prob
+
+
 class CTCForcedAligner(object):
     def __init__(self, blank=0):
         self.blank = blank
-        self.log0 = LOG_0
 
     def __call__(self, logits, elens, ys, ylens):
         """Forced alignment with references.
@@ -631,30 +648,11 @@ class CTCForcedAligner(object):
             # zero padding
             mask = make_pad_mask(elens.to(logits.device))
             mask = mask.unsqueeze(2).expand_as(logits)
-            logits = logits.masked_fill_(mask == 0, self.log0)
+            logits = logits.masked_fill_(mask == 0, LOG_0)
             log_probs = torch.log_softmax(logits, dim=-1).transpose(0, 1)  # `[T, B, vocab]`
 
             trigger_points = self.align(log_probs, elens, ys_in_pad, ylens)
         return trigger_points
-
-    def _computes_transition(self, prev_log_prob, path, path_lens, cum_log_prob, y, skip_accum=False):
-        bs, max_path_len = path.size()
-        mat = prev_log_prob.new_zeros(3, bs, max_path_len).fill_(self.log0)
-        mat[0, :, :] = prev_log_prob
-        mat[1, :, 1:] = prev_log_prob[:, :-1]
-        mat[2, :, 2:] = prev_log_prob[:, :-2]
-        # disable transition between the same symbols
-        # (including blank-to-blank)
-        same_transition = (path[:, :-2] == path[:, 2:])
-        mat[2, :, 2:][same_transition] = self.log0
-        log_prob = torch.logsumexp(mat, dim=0)
-        outside = torch.arange(max_path_len, dtype=torch.int64) >= path_lens.unsqueeze(1)
-        log_prob[outside] = self.log0
-        if not skip_accum:
-            cum_log_prob += log_prob
-        batch_index = torch.arange(bs, dtype=torch.int64).unsqueeze(1)
-        log_prob += y[batch_index, path]
-        return log_prob
 
     def align(self, log_probs, elens, ys, ylens, add_eos=True):
         """Calculte the best CTC alignment with the forward-backward algorithm.
@@ -678,25 +676,32 @@ class CTCForcedAligner(object):
         assert ys.size() == (bs, ymax), ys.size()
         assert path.size() == (bs, ymax * 2 + 1)
 
-        alpha = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
+        alpha = log_probs.new_zeros(bs, max_path_len).fill_(LOG_0)
         alpha[:, 0] = LOG_1
         beta = alpha.clone()
         gamma = alpha.clone()
 
         batch_index = torch.arange(bs, dtype=torch.int64).unsqueeze(1)
-        seq_index = torch.arange(xmax, dtype=torch.int64).unsqueeze(1).unsqueeze(2)
-        log_probs_fwd_bwd = log_probs[seq_index, batch_index, path]
+        frame_index = torch.arange(xmax, dtype=torch.int64).unsqueeze(1).unsqueeze(2)
+        log_probs_fwd_bwd = log_probs[frame_index, batch_index, path]
+        same_transition = (path[:, :-2] == path[:, 2:])
+        outside = torch.arange(max_path_len, dtype=torch.int64) >= path_lens.unsqueeze(1)
+        log_probs_gold = log_probs[:, batch_index, path]
 
         # forward algorithm
         for t in range(xmax):
-            alpha = self._computes_transition(alpha, path, path_lens, log_probs_fwd_bwd[t], log_probs[t])
+            alpha = _computes_transition(alpha, same_transition, outside,
+                                         log_probs_fwd_bwd[t], log_probs_gold[t])
 
         # backward algorithm
         r_path = _flip_path(path, path_lens)
         log_probs_inv = _flip_label_probability(log_probs, elens.long())  # `[T, B, vocab]`
         log_probs_fwd_bwd = _flip_path_probability(log_probs_fwd_bwd, elens.long(), path_lens)  # `[T, B, 2*L+1]`
+        r_same_transition = (r_path[:, :-2] == r_path[:, 2:])
+        log_probs_inv_gold = log_probs_inv[:, batch_index, r_path]
         for t in range(xmax):
-            beta = self._computes_transition(beta, r_path, path_lens, log_probs_fwd_bwd[t], log_probs_inv[t])
+            beta = _computes_transition(beta, r_same_transition, outside,
+                                        log_probs_fwd_bwd[t], log_probs_inv_gold[t])
 
         # pick up the best CTC path
         best_aligns = log_probs.new_zeros((bs, xmax), dtype=torch.int64)
@@ -704,11 +709,12 @@ class CTCForcedAligner(object):
         # forward algorithm
         log_probs_fwd_bwd = _flip_path_probability(log_probs_fwd_bwd, elens.long(), path_lens)
         for t in range(xmax):
-            gamma = self._computes_transition(gamma, path, path_lens, log_probs_fwd_bwd[t], log_probs[t],
-                                              skip_accum=True)
+            gamma = _computes_transition(gamma, same_transition, outside,
+                                         log_probs_fwd_bwd[t], log_probs_gold[t],
+                                         skip_accum=True)
 
             # select paths where gamma is valid
-            log_probs_fwd_bwd[t] = log_probs_fwd_bwd[t].masked_fill_(gamma == self.log0, self.log0)
+            log_probs_fwd_bwd[t] = log_probs_fwd_bwd[t].masked_fill_(gamma == LOG_0, LOG_0)
 
             # pick up the best alignment
             offsets = log_probs_fwd_bwd[t].argmax(1)
@@ -718,7 +724,7 @@ class CTCForcedAligner(object):
                     best_aligns[b, t] = token_idx
 
             # remove the rest of paths
-            gamma = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
+            gamma = log_probs.new_zeros(bs, max_path_len).fill_(LOG_0)
             for b in range(bs):
                 gamma[b, offsets[b]] = LOG_1
 
