@@ -30,6 +30,7 @@ ln -sf ${root}/coverage.xml .
 ./score.sh --model results/asr/train_char/conv2Llstm16H8P1L_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1 || exit 1;
 ./score.sh --block_sync true --block_size 8 --model results/asr/train_char/conv2Llstm16H8P1L_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1
 ./plot_ctc.sh --model results/asr/train_char/conv2Llstm16H8P1L_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1 || exit 1;
+./ctc_forced_align.sh --model results/asr/train_char/conv2Llstm16H8P1L_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1 || exit 1;
 ### RNN-T
 ./run.sh --stage 4 --conf conf/asr/lcblstm_transducer.yaml || exit 1;
 ./score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL40R40_drop4_lstm_transducer16H8P1L_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
