@@ -500,10 +500,10 @@ class RNNTransducer(DecoderBase):
             self.state_cache = OrderedDict()
 
             if beam_search_type == 'time_sync_mono':
-                hyps, new_hyps_sorted = self._time_sync_mono(
+                hyps, new_hyps = self._time_sync_mono(
                     hyps, helper, eouts[b:b + 1, :elens[b]], softmax_smoothing, lm)
             elif beam_search_type == 'time_sync':
-                hyps, new_hyps_sorted = self._time_sync(
+                hyps, new_hyps = self._time_sync(
                     hyps, helper, eouts[b:b + 1, :elens[b]], softmax_smoothing, lm)
             else:
                 raise NotImplementedError(beam_search_type)
@@ -511,7 +511,7 @@ class RNNTransducer(DecoderBase):
             # Global pruning
             end_hyps = hyps[:]
             if len(end_hyps) < nbest and nbest > 1:
-                end_hyps.extend(new_hyps_sorted[:nbest - len(end_hyps)])
+                end_hyps.extend(new_hyps[:nbest - len(end_hyps)])
 
             # forward/backward second-pass LM rescoring
             end_hyps = helper.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
@@ -665,17 +665,18 @@ class RNNTransducer(DecoderBase):
                                      'update_pred_net': not exist_cache})
 
             # Local pruning
-            new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)
-            new_hyps_sorted = helper.merge_rnnt_path(new_hyps_sorted, merge_prob)
-            hyps = new_hyps_sorted[:beam_width]
+            new_hyps = sorted(new_hyps, key=lambda x: x['score'], reverse=True)
+            new_hyps = helper.merge_rnnt_path(new_hyps, merge_prob)
+            hyps = new_hyps[:beam_width]
 
-        return hyps, new_hyps_sorted
+        return hyps, new_hyps
 
     def _time_sync(self, hyps, helper, eout, softmax_smoothing, lm,
                    merge_prob=True, n_expand=3):
         """Breadth-first time-synchronous decoding (TSD)."""
         beam_width = helper.beam_width
         lm_weight = helper.lm_weight
+        assert eout.size(1) > 0
 
         # B: hyps
         for t in range(eout.size(1)):
@@ -772,12 +773,12 @@ class RNNTransducer(DecoderBase):
 
         return hyps, hyps_v
 
-    def beam_search_block_sync(self, eouts, params, helper, idx2token,
-                               hyps, lm, state_carry_over=False):
+    def beam_search_block_sync(self, eouts, params, helper, idx2token, hyps, lm):
         assert eouts.size(0) == 1
 
         beam_width = params.get('recog_beam_width')
         lm_weight = params.get('recog_lm_weight')
+        lm_state_CO = params.get('recog_lm_state_carry_over')
         softmax_smoothing = params.get('recog_softmax_smoothing')
         beam_search_type = params.get('recog_rnnt_beam_search_type')
 
@@ -786,24 +787,20 @@ class RNNTransducer(DecoderBase):
             # Initialization per utterance
             dstate = {'hxs': eouts.new_zeros(self.n_layers, 1, self.dec_n_units),
                       'cxs': eouts.new_zeros(self.n_layers, 1, self.dec_n_units)}
-            lmstate = {'hxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units),
-                       'cxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units)} if lm is not None else None
-
-            if state_carry_over:
-                dstate = self.dstates_final
+            if lm_state_CO:
                 lmstate = self.lmstate_final
+            else:
+                lmstate = {'hxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units),
+                           'cxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units)} if lm is not None else None
 
             self.n_frames = 0
-            self.chunk_size = eouts.size(1)
             hyps = self.initialize_beam([self.eos], dstate, lmstate)
             self.state_cache = OrderedDict()
 
         if beam_search_type == 'time_sync_mono':
-            hyps, new_hyps_sorted = self._time_sync_mono(
-                hyps, helper, eouts, softmax_smoothing, lm)
+            hyps, _ = self._time_sync_mono(hyps, helper, eouts, softmax_smoothing, lm)
         elif beam_search_type == 'time_sync':
-            hyps, new_hyps_sorted = self._time_sync(
-                hyps, helper, eouts, softmax_smoothing, lm)
+            hyps, _ = self._time_sync(hyps, helper, eouts, softmax_smoothing, lm)
         else:
             raise NotImplementedError(beam_search_type)
 
@@ -823,9 +820,8 @@ class RNNTransducer(DecoderBase):
                 logger.info('-' * 50)
 
         # Store ASR/LM state
-        if len(end_hyps) > 0:
-            self.dstates_final = end_hyps[0]['dstates']
-            self.lmstate_final = end_hyps[0]['lmstate']
+        if len(merged_hyps) > 0:
+            self.lmstate_final = merged_hyps[0]['lmstate']
 
         self.n_frames += eouts.size(1)
 

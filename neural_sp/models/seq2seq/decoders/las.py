@@ -1330,12 +1330,10 @@ class RNNDecoder(DecoderBase):
                              'quantity_rate': quantity_rate})
 
                 # Local pruning
-                new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+                new_hyps = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
                 # Remove complete hypotheses
-                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
-                    new_hyps_sorted, end_hyps)
-                hyps = new_hyps[:]
+                hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps, end_hyps)
                 if is_finish:
                     break
 
@@ -1456,7 +1454,7 @@ class RNNDecoder(DecoderBase):
 
     def beam_search_block_sync(self, eouts, params, helper, idx2token,
                                hyps, hyps_nobd, lm, ctc_log_probs=None,
-                               state_carry_over=False, ignore_eos=False):
+                               ignore_eos=False):
         assert eouts.size(0) == 1
         assert self.attn_type == 'mocha'
 
@@ -1467,6 +1465,7 @@ class RNNDecoder(DecoderBase):
         length_norm = params.get('recog_length_norm')
         lm_weight = params.get('recog_lm_weight')
         eos_threshold = params.get('recog_eos_threshold')
+        lm_state_CO = params.get('recog_lm_state_carry_over')
         softmax_smoothing = params.get('recog_softmax_smoothing')
 
         end_hyps = []
@@ -1475,7 +1474,7 @@ class RNNDecoder(DecoderBase):
             self.score.reset()
             cv = eouts.new_zeros(1, 1, self.enc_n_units)
             dstates = self.zero_state(1)
-            lmstate = None
+            lmstate = self.lmstate_final if lm_state_CO else None
             ctc_state = None
 
             # For joint CTC-Attention decoding
@@ -1490,10 +1489,6 @@ class RNNDecoder(DecoderBase):
                 else:
                     self.ctc_prefix_scorer.register_new_chunk(ctc_log_probs[0])
             # TODO: add truncated version
-
-            if state_carry_over:
-                dstates = self.dstates_final
-                lmstate = self.lmstate_final
 
             self.n_frames = 0
             self.key_tail = None
@@ -1594,10 +1589,10 @@ class RNNDecoder(DecoderBase):
 
             # Local pruning
             new_hyps += hyps_nobd
-            new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+            new_hyps = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
             # Remove complete hypotheses
-            new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps_sorted, end_hyps)
+            new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps, end_hyps)
             hyps_nobd = [beam for beam in new_hyps if beam['no_boundary']]
             hyps = [beam for beam in new_hyps if not beam['no_boundary']]
             if is_finish:
@@ -1630,9 +1625,8 @@ class RNNDecoder(DecoderBase):
                 logger.info('-' * 50)
 
         # Store ASR/LM state
-        if len(end_hyps) > 0:
-            self.dstates_final = end_hyps[0]['dstates']
-            self.lmstate_final = end_hyps[0]['lmstate']
+        if len(merged_hyps) > 0:
+            self.lmstate_final = merged_hyps[0]['lmstate']
 
         self.n_frames += eouts.size(1)
         self.score.reset()
