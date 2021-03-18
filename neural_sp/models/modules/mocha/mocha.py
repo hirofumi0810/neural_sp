@@ -142,19 +142,10 @@ class MoChA(nn.Module):
         if self.chunk_energy is not None:
             self.chunk_energy.reset()
         self.bd_L_prev = 0
-        self.key_prev_tail = None
-        self.key_cur_tail = None
+        self.key_tail = None
 
-    def reset_block(self):
-        """Reset when moving to the next block. This is used for streaming inference."""
-        if self.monotonic_energy is not None:
-            self.monotonic_energy.reset()
-        if self.chunk_energy is not None:
-            self.chunk_energy.reset()
-        self.bd_L_prev = 0
-        self.key_prev_tail = self.key_cur_tail
-        self.key_cur_tail = None
-        # NOTE: cache encoder outputs at the previous block
+    def register_tail(self, key_tail):
+        self.key_tail = key_tail
 
     def forward(self, key, value, query, mask, aw_prev=None,
                 cache=False, mode='hard', trigger_points=None, eps_wait=-1,
@@ -172,7 +163,7 @@ class MoChA(nn.Module):
             trigger_points (IntTensor): `[B, qlen]`
             eps_wait (int): wait time delay for head-synchronous decoding in MMA
             linear_decoding (bool): linear-time decoding mode
-            streaming (bool): streaming mode (use self.key_prev_tail)
+            streaming (bool): streaming mode (use self.key_tail)
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             alpha (FloatTensor): `[B, H_ma, qlen, klen]`
@@ -183,14 +174,15 @@ class MoChA(nn.Module):
         """
         klen = key.size(1)
         bs, qlen = query.size()[:2]
-        tail_len = self.key_prev_tail.size(1) if self.key_prev_tail is not None else 0
+        tail_len = self.key_tail.size(1) if self.key_tail is not None else 0
         bd_L = self.bd_L_prev
         bd_R = klen - 1
+        assert bd_L <= bd_R
         attn_state = {}
 
         if aw_prev is None:
             aw_prev = key.new_zeros(bs, self.H_ma, 1, klen)
-            aw_prev[:, :, :, 0:1] = key.new_ones(bs, self.H_ma, 1, 1)  # aw_prev = [1, 0, 0 ... 0]
+            aw_prev[:, :, :, 0:1] = key.new_ones(bs, self.H_ma, 1, 1)  # [1, 0, 0 ... 0]
 
         # Compute monotonic energy
         e_ma = self.monotonic_energy(key, query, mask, cache, bd_L, bd_R)  # `[B, H_ma, qlen, klen]`
@@ -219,7 +211,7 @@ class MoChA(nn.Module):
             bd_L = self.bd_L_prev + alpha[:, :, -1].nonzero()[:, -1].min().item()
             bd_R = self.bd_L_prev + alpha[:, :, -1].nonzero()[:, -1].max().item()
         bd_L_ca = max(0, bd_L + 1 - self.w) if not self.milk else 0
-        use_tail = streaming and is_boundary and (bd_L + 1 < self.w) and tail_len > 0
+        use_tail = streaming and is_boundary and tail_len > 0
 
         # Compute chunk energy
         beta = None
@@ -230,7 +222,7 @@ class MoChA(nn.Module):
                     beta = alpha.new_zeros(bs, self.H_total, qlen, value.size(1))
                 else:
                     if use_tail:
-                        key = torch.cat([self.key_prev_tail[0:1], key[0:1]], dim=1)
+                        key = torch.cat([self.key_tail, key], dim=1)
                         bd_L += tail_len
                         bd_R += tail_len
                     bd_L_ca = max(0, bd_L + 1 - self.w) if not self.milk else 0
@@ -245,7 +237,7 @@ class MoChA(nn.Module):
                     if use_tail:
                         alpha_masked = torch.cat([alpha.new_zeros(bs, self.H_ma, qlen, tail_len),
                                                   alpha_masked], dim=3)
-                        value = torch.cat([self.key_prev_tail[0:1], value[0:1]], dim=1)
+                        value = torch.cat([self.key_tail[0:1], value[0:1]], dim=1)
 
                     alpha_masked = alpha_masked[:, :, :, bd_L_ca:bd_R + 1]
                     value = value[:, bd_L_ca:bd_R + 1]
@@ -265,7 +257,6 @@ class MoChA(nn.Module):
                                                 self.H_ca, self.sharpening_factor,
                                                 self.share_ca)  # `[B, H_ma * H_ca, qlen, klen]`
                 beta = self.dropout_attn(beta)
-
                 assert beta.size() == (bs, self.H_total, qlen, klen), \
                     (beta.size(), (bs, self.H_total, qlen, klen))
 
@@ -297,19 +288,6 @@ class MoChA(nn.Module):
 
         assert alpha.size() == (bs, self.H_ma, qlen, klen), \
             (alpha.size(), (bs, self.H_ma, qlen, klen, bd_L, bd_R))
-
-        # cache encoder outputs when moving to the next block
-        if mode == 'hard' and streaming and self.key_cur_tail is None:
-            if not is_boundary:
-                self.key_cur_tail = key.detach()[:, -(self.w - 1):]
-            elif bd_L + 1 < self.w:
-                n_rest = self.w - (bd_L + 1)
-                if n_rest < klen:
-                    self.key_cur_tail = key.detach()[:, -n_rest:]
-                elif self.key_prev_tail is not None:
-                    # concatetane multiple blocks (>=3)
-                    self.key_cur_tail = torch.cat([self.key_prev_tail[:, -(klen - n_rest):],
-                                                   key.detach()], dim=1)[:, -n_rest:]
 
         attn_state['beta'] = beta
         attn_state['p_choose'] = p_choose

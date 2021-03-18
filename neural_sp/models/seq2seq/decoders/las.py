@@ -177,6 +177,7 @@ class RNNDecoder(DecoderBase):
         self.lmstate_final = None
         self.trflm_mem = None
         self.embed_cache = None
+        self.key_tail = None
 
         # for attention plot
         self.aws_dict = {}
@@ -267,7 +268,7 @@ class RNNDecoder(DecoderBase):
         self.reset_parameters(param_init)
         # NOTE: LM registration and initialization should be performed after reset_parameters()
 
-        # resister external RNNLM
+        # register external RNNLM
         self.lm = external_lm if lm_fusion else None
 
         # decoder initialization with pre-trained RNNLM
@@ -477,9 +478,9 @@ class RNNDecoder(DecoderBase):
                     loss_att += loss_quantity * self._quantity_loss_weight
                 observation['loss_quantity'] = tensor2scalar(loss_quantity)
             if self.latency_metric:
-                observation['loss_latency'] = tensor2scalar(loss_latency) if self.training else 0
                 if self.latency_loss_weight > 0:
                     loss_att += loss_latency * self.latency_loss_weight
+                observation['loss_latency'] = tensor2scalar(loss_latency) if self.training else 0
             if self.mtl_per_batch:
                 loss += loss_att
             else:
@@ -585,7 +586,7 @@ class RNNDecoder(DecoderBase):
         ######################################
         # 4. backward pass (attach gradient)
         ######################################
-        eos = eouts.new_zeros((1,), dtype=torch.int64).fill_(self.eos)
+        eos = ys_in.new_zeros((1,)).fill_(self.eos)
         nbest_hyps_id_batch_pad = pad_list([torch.cat([np2tensor(y, eouts.device), eos], dim=0)
                                             for y in nbest_hyps_id_batch], self.pad)
         grad = eouts.new_zeros(bs * nbest, nbest_hyps_id_batch_pad.size(1), self.vocab)
@@ -1329,12 +1330,10 @@ class RNNDecoder(DecoderBase):
                              'quantity_rate': quantity_rate})
 
                 # Local pruning
-                new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+                new_hyps = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
                 # Remove complete hypotheses
-                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
-                    new_hyps_sorted, end_hyps)
-                hyps = new_hyps[:]
+                hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps, end_hyps)
                 if is_finish:
                     break
 
@@ -1437,9 +1436,25 @@ class RNNDecoder(DecoderBase):
 
         return nbest_hyps_idx, aws, scores
 
+    def batchfy_beam(self, hyps, i):
+        """Batchfy all the active hypetheses in an utternace for efficient matrix multiplication."""
+        y = torch.zeros((len(hyps), 1), dtype=torch.int64, device=self.device)
+        for j, beam in enumerate(hyps):
+            y[j, 0] = beam['hyp'][-1]
+        cv = torch.cat([beam['cv'] for beam in hyps], dim=0)
+        if self.attn_type in ['gmm', 'sagmm']:
+            aw = torch.cat([beam['myu'] for beam in hyps], dim=0) if i > 0 else None
+        else:
+            aw = torch.cat([beam['aws'][-1] for beam in hyps], dim=0) if i > 0 else None
+        hxs = torch.cat([beam['dstates']['dstate'][0] for beam in hyps], dim=1)
+        if 'lstm' in self.rnn_type:
+            cxs = torch.cat([beam['dstates']['dstate'][1] for beam in hyps], dim=1)
+        dstates = {'dstate': (hxs, cxs)}
+        return y, cv, aw, dstates
+
     def beam_search_block_sync(self, eouts, params, helper, idx2token,
-                               hyps, lm, ctc_log_probs=None,
-                               state_carry_over=False):
+                               hyps, hyps_nobd, lm, ctc_log_probs=None,
+                               ignore_eos=False):
         assert eouts.size(0) == 1
         assert self.attn_type == 'mocha'
 
@@ -1450,6 +1465,7 @@ class RNNDecoder(DecoderBase):
         length_norm = params.get('recog_length_norm')
         lm_weight = params.get('recog_lm_weight')
         eos_threshold = params.get('recog_eos_threshold')
+        lm_state_CO = params.get('recog_lm_state_carry_over')
         softmax_smoothing = params.get('recog_softmax_smoothing')
 
         end_hyps = []
@@ -1458,7 +1474,7 @@ class RNNDecoder(DecoderBase):
             self.score.reset()
             cv = eouts.new_zeros(1, 1, self.enc_n_units)
             dstates = self.zero_state(1)
-            lmstate = None
+            lmstate = self.lmstate_final if lm_state_CO else None
             ctc_state = None
 
             # For joint CTC-Attention decoding
@@ -1474,48 +1490,25 @@ class RNNDecoder(DecoderBase):
                     self.ctc_prefix_scorer.register_new_chunk(ctc_log_probs[0])
             # TODO: add truncated version
 
-            if state_carry_over:
-                dstates = self.dstates_final
-                lmstate = self.lmstate_final
-
             self.n_frames = 0
-            self.chunk_size = eouts.size(1)
+            self.key_tail = None
             hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state)
         else:
-            for h in hyps:
-                h['no_boundary'] = False
+            hyps += hyps_nobd
+            hyps_nobd = []
+            for beam in hyps:
+                beam['no_boundary'] = False
+            self.score.reset()
+            self.score.register_tail(self.key_tail)
 
         ymax = math.ceil(eouts.size(1) * max_len_ratio)
         for i in range(ymax):
             # finish if no additional token boundary is found in the current block for all candidates
             if len(hyps) == 0:
                 break
-            if i > 0 and sum([cand['no_boundary'] for cand in hyps]) == len(hyps):
-                break
-
-            # ignore hypotheses with no boundary from batched hypotheses
-            new_hyps = []
-            hyps_filtered = []
-            for j, beam in enumerate(hyps):
-                # no token boundary found in the current block
-                if beam['no_boundary']:
-                    new_hyps.append(beam.copy())
-                else:
-                    hyps_filtered.append(beam.copy())
-            if len(hyps_filtered) == 0:
-                break
-            hyps = hyps_filtered[:]
 
             # batchfy all hypotheses for batch decoding
-            y = eouts.new_zeros((len(hyps), 1), dtype=torch.int64)
-            for j, beam in enumerate(hyps):
-                y[j, 0] = beam['hyp'][-1]
-            cv = torch.cat([beam['cv'] for beam in hyps], dim=0)
-            aw = torch.cat([beam['aws'][-1] for beam in hyps], dim=0) if i > 0 else None
-            hxs = torch.cat([beam['dstates']['dstate'][0] for beam in hyps], dim=1)
-            if self.rnn_type == 'lstm':
-                cxs = torch.cat([beam['dstates']['dstate'][1] for beam in hyps], dim=1)
-            dstates = {'dstate': (hxs, cxs)}
+            y, cv, aw, dstates = self.batchfy_beam(hyps, i)
 
             # Update LM states for LM fusion
             lmout, lmstate, scores_lm = helper.update_rnnlm_state_batch(
@@ -1523,18 +1516,16 @@ class RNNDecoder(DecoderBase):
 
             y_emb = self.embed_token_id(y)
             dstates, cv, aw, _, attn_v = self.decode_step(
-                eouts[0:1], dstates, cv, y_emb, None, aw, lmout, streaming=True)
+                eouts, dstates, cv, y_emb, None, aw, lmout, streaming=True)
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)
-            # NOTE: aw: `[B, H, 1, T_block]`
 
+            new_hyps = []
             for j, beam in enumerate(hyps):
                 # no token boundary found in the current block for j-th utterance
                 no_boundary = aw[j].sum().item() == 0
                 if no_boundary:
-                    beam['aws'][-1] = eouts.new_zeros(eouts.size(0), 1, 1, eouts.size(1))
-                    # NOTE: case where the first token in the current block is <eos>
-                    beam['no_boundary'] = True
-                    new_hyps.append(beam.copy())  # this is important to remove repeated hyps
+                    hyps_nobd.append(beam.copy())  # this is important to remove repeated hyps
+                    hyps_nobd[-1]['no_boundary'] = True
 
                 # Attention scores
                 total_scores_att = beam['score_att'] + scores_att[j:j + 1]
@@ -1552,12 +1543,12 @@ class RNNDecoder(DecoderBase):
                 # Add length penalty
                 total_scores_topk += (len(beam['hyp'][1:]) + 1) * lp_weight
 
-                cp = self.n_frames
+                bd = self.n_frames
                 if not no_boundary:
                     boundary_list_j = np.where(tensor2np(aw[j].sum(1).sum(0)) != 0)[0]
-                    cp += int(boundary_list_j[0])
+                    bd += int(boundary_list_j[0])
                     if len(beam['boundary']) > 0:
-                        assert cp >= beam['boundary'][-1], (cp, beam['boundary'])
+                        assert bd >= beam['boundary'][-1], (bd, beam['boundary'])
 
                 # Add CTC score
                 new_ctc_states, total_scores_ctc, total_scores_topk = helper.add_ctc_score(
@@ -1566,6 +1557,8 @@ class RNNDecoder(DecoderBase):
 
                 for k in range(beam_width):
                     idx = topk_ids[0, k].item()
+                    if ignore_eos and idx == self.eos:
+                        continue
                     if no_boundary and idx != self.eos:
                         continue
                     length_norm_factor = len(beam['hyp'][1:]) + 1 if length_norm else 1
@@ -1591,15 +1584,17 @@ class RNNDecoder(DecoderBase):
                          'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1],
                                      'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                          'ctc_state': new_ctc_states[k] if self.ctc_prefix_scorer is not None else None,
-                         'boundary': beam['boundary'] + [cp] if not no_boundary else beam['boundary'],
+                         'boundary': beam['boundary'] + [bd] if not no_boundary else beam['boundary'],
                          'no_boundary': no_boundary})
 
             # Local pruning
-            new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+            new_hyps += hyps_nobd
+            new_hyps = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
             # Remove complete hypotheses
-            new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps_sorted, end_hyps)
-            hyps = new_hyps[:]
+            new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps, end_hyps)
+            hyps_nobd = [beam for beam in new_hyps if beam['no_boundary']]
+            hyps = [beam for beam in new_hyps if not beam['no_boundary']]
             if is_finish:
                 break
 
@@ -1607,7 +1602,7 @@ class RNNDecoder(DecoderBase):
         if len(end_hyps) > 0:
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
 
-        merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+        merged_hyps = sorted(end_hyps + hyps + hyps_nobd, key=lambda x: x['score'], reverse=True)[:beam_width]
         if idx2token is not None:
             logger.info('=' * 200)
             for k in range(len(merged_hyps)):
@@ -1629,14 +1624,12 @@ class RNNDecoder(DecoderBase):
                                 (merged_hyps[k]['score_lm'] * lm_weight))
                 logger.info('-' * 50)
 
-        aws = None
-
         # Store ASR/LM state
-        if len(end_hyps) > 0:
-            self.dstates_final = end_hyps[0]['dstates']
-            self.lmstate_final = end_hyps[0]['lmstate']
+        if len(merged_hyps) > 0:
+            self.lmstate_final = merged_hyps[0]['lmstate']
 
         self.n_frames += eouts.size(1)
-        self.score.reset_block()
+        self.score.reset()
+        self.key_tail = eouts[:, -(self.score.w - 1):]
 
-        return end_hyps, hyps, aws
+        return end_hyps, hyps, hyps_nobd

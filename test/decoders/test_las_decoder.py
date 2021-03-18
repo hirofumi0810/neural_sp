@@ -457,6 +457,7 @@ def test_streaming_decoding(params):
     N_l = 5
     n_chunks = math.ceil(emax / N_l)
     hyps = None
+    hyps_nobd = []
 
     module_bs = importlib.import_module('neural_sp.models.seq2seq.decoders.beam_search')
     helper = module_bs.BeamSearch(params['recog_beam_width'],
@@ -470,9 +471,8 @@ def test_streaming_decoding(params):
         for chunk_idx in range(n_chunks):
             eouts_chunk = eouts[:, N_l * chunk_idx:N_l * (chunk_idx + 1)]
             out = dec.beam_search_block_sync(eouts_chunk, params, helper, idx2token,
-                                             hyps, lm,
-                                             ctc_log_probs=ctc_log_probs)
+                                             hyps, hyps_nobd, lm, ctc_log_probs)
             assert len(out) == 3
-            end_hyps, hyps, _ = out
+            end_hyps, hyps, hyps_nobd = out
             assert isinstance(end_hyps, list)
             assert isinstance(hyps, list)

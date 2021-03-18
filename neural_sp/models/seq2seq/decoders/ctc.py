@@ -306,13 +306,12 @@ class CTC(DecoderBase):
             hyps = self.initialize_beam([self.eos], lmstate)
             self.state_cache = OrderedDict()
 
-            hyps, new_hyps_sorted = self._beam_search(hyps, helper, log_probs[b], lm,
-                                                      lp_weight)
+            hyps, new_hyps = self._beam_search(hyps, helper, log_probs[b], lm, lp_weight)
 
             # Global pruning
             end_hyps = hyps[:]
             if len(end_hyps) < nbest and nbest > 1:
-                end_hyps.extend(new_hyps_sorted[:nbest - len(end_hyps)])
+                end_hyps.extend(new_hyps[:nbest - len(end_hyps)])
 
             # forward/backward second-pass LM rescoring
             end_hyps = helper.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
@@ -474,38 +473,36 @@ class CTC(DecoderBase):
                                      'update_lm': not exist_cache})
 
             # Pruning
-            new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)
-            new_hyps_sorted = helper.merge_ctc_path(new_hyps_sorted, merge_prob)
-            hyps = new_hyps_sorted[:beam_width]
+            new_hyps = sorted(new_hyps, key=lambda x: x['score'], reverse=True)
+            new_hyps = helper.merge_ctc_path(new_hyps, merge_prob)
+            hyps = new_hyps[:beam_width]
 
-        return hyps, new_hyps_sorted
+        return hyps, new_hyps
 
-    def beam_search_block_sync(self, eouts, params, helper, idx2token,
-                               hyps, lm, state_carry_over=False):
+    def beam_search_block_sync(self, eouts, params, helper, idx2token, hyps, lm):
         assert eouts.size(0) == 1
 
         beam_width = params.get('recog_beam_width')
         lp_weight = params.get('recog_length_penalty')
         lm_weight = params.get('recog_lm_weight')
+        lm_state_CO = params.get('recog_lm_state_carry_over')
         softmax_smoothing = params.get('recog_softmax_smoothing')
 
         end_hyps = []
         if hyps is None:
             # Initialization per utterance
-            lmstate = {'hxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units),
-                       'cxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units)} if lm is not None else None
-
-            if state_carry_over:
+            if lm_state_CO:
                 lmstate = self.lmstate_final
+            else:
+                lmstate = {'hxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units),
+                           'cxs': eouts.new_zeros(lm.n_layers, 1, lm.n_units)} if lm is not None else None
 
             self.n_frames = 0
-            self.chunk_size = eouts.size(1)
             hyps = self.initialize_beam([self.eos], lmstate)
             self.state_cache = OrderedDict()
 
         log_probs = torch.log_softmax(self.output(eouts) * softmax_smoothing, dim=-1)
-        hyps, new_hyps_sorted = self._beam_search(hyps, helper, log_probs[0], lm,
-                                                  lp_weight)
+        hyps, _ = self._beam_search(hyps, helper, log_probs[0], lm, lp_weight)
 
         # merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'] / len(x['hyp']), reverse=True)[:beam_width]
         merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
@@ -523,8 +520,8 @@ class CTC(DecoderBase):
                 logger.info('-' * 50)
 
         # Store LM state
-        if len(end_hyps) > 0:
-            self.lmstate_final = end_hyps[0]['lmstate']
+        if len(merged_hyps) > 0:
+            self.lmstate_final = merged_hyps[0]['lmstate']
 
         self.n_frames += eouts.size(1)
 

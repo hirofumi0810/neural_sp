@@ -528,7 +528,7 @@ class Speech2Text(ModelBase):
         self.enc.reset_cache()
         while True:
             # Encode input features block by block
-            x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feature()
+            x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feat()
             eout_block_dict = self.encode([x_block], 'all',
                                           streaming=True,
                                           cnn_lookback=cnn_lookback,
@@ -566,6 +566,7 @@ class Speech2Text(ModelBase):
         is_transformer_enc = 'former' in self.enc.enc_type
 
         hyps = None
+        hyps_nobd = []
         best_hyp_id_session = []
         is_reset = False
 
@@ -589,6 +590,7 @@ class Speech2Text(ModelBase):
             self.dec_fwd.cache_embedding(self.device)
 
         self.enc.reset_cache()
+        eout_block_tail = None
         while True:
             # Encode input features block by block
             x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feat()
@@ -600,6 +602,9 @@ class Speech2Text(ModelBase):
                                           cnn_lookahead=cnn_lookahead,
                                           xlen_block=xlen_block)
             eout_block = eout_block_dict[task]['xs']
+            if eout_block_tail is not None:
+                eout_block = torch.cat([eout_block_tail, eout_block], dim=1)
+                eout_block_tail = None
 
             # CTC-based VAD
             is_reset = False
@@ -613,6 +618,8 @@ class Speech2Text(ModelBase):
 
             # Truncate the most right frames based on VAD
             if is_reset and not is_last_block and streaming.bd_offset >= 0:
+                if is_transformer_enc and eout_block[:, streaming.bd_offset:].size(1) > 0:
+                    eout_block_tail = eout_block[:, streaming.bd_offset:]
                 eout_block = eout_block[:, :streaming.bd_offset]
 
             if eout_block.size(1) > 0:
@@ -626,21 +633,22 @@ class Speech2Text(ModelBase):
                     end_hyps, hyps = self.dec_fwd.beam_search_block_sync(
                         eout_block, params, helper, idx2token, hyps, lm)
                 elif isinstance(self.dec_fwd, RNNDecoder):
+                    n_frames = getattr(self.dec_fwd, 'n_frames', 0)
                     for i in range(math.ceil(eout_block.size(1) / block_size)):
                         eout_block_i = eout_block[:, i * block_size:(i + 1) * block_size]
-                        end_hyps, hyps, _ = self.dec_fwd.beam_search_block_sync(
-                            eout_block_i, params, helper, idx2token, hyps, lm)
+                        end_hyps, hyps, hyps_nobd = self.dec_fwd.beam_search_block_sync(
+                            eout_block_i, params, helper, idx2token, hyps, hyps_nobd, lm)
                 elif isinstance(self.dec_fwd, TransformerDecoder):
                     raise NotImplementedError
                 else:
                     raise NotImplementedError(self.dec_fwd)
 
-                merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'], reverse=True)
+                merged_hyps = sorted(end_hyps + hyps + hyps_nobd, key=lambda x: x['score'], reverse=True)
                 if len(merged_hyps) > 0:
                     best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
                     best_hyp_id_prefix_viz = np.array(merged_hyps[0]['hyp'][1:])
 
-                    if len(hyps) == 0 or (len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos):
+                    if (len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos):
                         # reset beam if <eos> is generated from the best hypothesis
                         best_hyp_id_prefix = best_hyp_id_prefix[:-1]  # exclude <eos>
                         # Segmentation strategy 2:
@@ -663,10 +671,12 @@ class Speech2Text(ModelBase):
                 # pick up the best hyp from ended and active hypotheses
                 if len(best_hyp_id_prefix) > 0:
                     best_hyp_id_session.extend(best_hyp_id_prefix)
+                self.dec_fwd.n_frames = 0  # TODO: move this
 
                 # reset
                 streaming.reset(stdout=stdout)
                 hyps = None
+                hyps_nobd = []
 
             streaming.next_block()
             if is_last_block:
