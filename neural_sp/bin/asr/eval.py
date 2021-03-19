@@ -20,7 +20,7 @@ from neural_sp.bin.train_utils import (
     load_config,
     set_logger
 )
-from neural_sp.datasets.asr import build_dataloader
+from neural_sp.datasets.asr.build import build_dataloader
 from neural_sp.evaluators.accuracy import eval_accuracy
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone

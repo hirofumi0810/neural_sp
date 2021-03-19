@@ -18,7 +18,7 @@ from neural_sp.bin.train_utils import (
     load_checkpoint,
     set_logger
 )
-from neural_sp.datasets.asr import build_dataloader
+from neural_sp.datasets.asr.build import build_dataloader
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
 
@@ -41,7 +41,8 @@ def main():
                                       tsv_path=s,
                                       batch_size=1,
                                       is_test=True,
-                                      first_n_utterances=args.recog_first_n_utt)
+                                      first_n_utterances=args.recog_first_n_utt,
+                                      longform_max_n_frames=args.recog_longform_max_n_frames)
 
         if i == 0:
             # Load ASR model
@@ -73,8 +74,7 @@ def main():
             shutil.rmtree(save_path)
             os.mkdir(save_path)
 
-        while True:
-            batch, is_new_epoch = dataloader.next(args.recog_batch_size)
+        for batch in dataloader:
             nbest_hyps_id, _ = model.decode(batch['xs'], args, dataloader.idx2token[0])
             best_hyps_id = [h[0] for h in nbest_hyps_id]
 
@@ -99,9 +99,6 @@ def main():
                 logger.info('Ref: %s' % batch['text'][b].lower())
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 50)
-
-            if is_new_epoch:
-                break
 
 
 if __name__ == '__main__':

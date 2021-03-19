@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def eval_wordpiece(models, dataloader, recog_params, epoch,
                    recog_dir=None, streaming=False, progressbar=False,
-                   fine_grained=False, oracle=False, teacher_force=False):
+                   edit_distance=True, fine_grained=False, oracle=False, teacher_force=False):
     """Evaluate a wordpiece-level model by WER.
 
     Args:
@@ -27,6 +27,7 @@ def eval_wordpiece(models, dataloader, recog_params, epoch,
         recog_dir (str): directory path to save hypotheses
         streaming (bool): streaming decoding for session-level evaluation
         progressbar (bool): visualize progressbar
+        edit_distance (bool): calculate edit-distance (can be skipped for RTF calculation)
         fine_grained (bool): calculate fine-grained WER distributions based on input lengths
         oracle (bool): calculate oracle WER
         teacher_force (bool): conduct decoding in teacher-forcing mode
@@ -70,8 +71,7 @@ def eval_wordpiece(models, dataloader, recog_params, epoch,
 
     with codecs.open(hyp_trn_path, 'w', encoding='utf-8') as f_hyp, \
             codecs.open(ref_trn_path, 'w', encoding='utf-8') as f_ref:
-        while True:
-            batch, is_new_epoch = dataloader.next(recog_params.get('recog_batch_size'))
+        for batch in dataloader:
             if streaming or recog_params.get('recog_block_sync'):
                 nbest_hyps_id = models[0].decode_streaming(
                     batch['xs'], recog_params, dataloader.idx2token[0],
@@ -84,9 +84,7 @@ def eval_wordpiece(models, dataloader, recog_params, epoch,
                     refs_id=batch['ys'],
                     utt_ids=batch['utt_ids'],
                     speakers=batch['sessions' if dataloader.corpus == 'swbd' else 'speakers'],
-                    ensemble_models=models[1:] if len(models) > 1 else [],
-                    trigger_points=batch['trigger_points'],
-                    teacher_force=teacher_force)[0]
+                    ensemble_models=models[1:] if len(models) > 1 else [])[0]
 
             for b in range(len(batch['xs'])):
                 ref = batch['text'][b]
@@ -107,7 +105,7 @@ def eval_wordpiece(models, dataloader, recog_params, epoch,
                 logger.debug('Hyp: %s' % nbest_hyps[0])
                 logger.debug('-' * 150)
 
-                if not streaming:
+                if edit_distance and not streaming:
                     # Compute WER
                     err_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
                                                              hyp=nbest_hyps[0].split(' '))
@@ -156,16 +154,13 @@ def eval_wordpiece(models, dataloader, recog_params, epoch,
                 if progressbar:
                     pbar.update(len(batch['utt_ids']))
 
-            if is_new_epoch:
-                break
-
     if progressbar:
         pbar.close()
 
     # Reset data counters
-    dataloader.reset()
+    dataloader.reset(is_new_epoch=True)
 
-    if not streaming:
+    if edit_distance and not streaming:
         wer /= n_word
         n_sub_w /= n_word
         n_ins_w /= n_word

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
                         recog_dir=None, streaming=False, progressbar=False,
-                        fine_grained=False, oracle=False, teacher_force=False):
+                        edit_distance=True, fine_grained=False, oracle=False, teacher_force=False):
     """Evaluate a wordpiece-level model by corpus-level BLEU.
 
     Args:
@@ -27,6 +27,7 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
         recog_dir (str): directory path to save hypotheses
         streaming (bool): streaming decoding for session-level evaluation
         progressbar (bool): visualize progressbar
+        edit_distance (bool): calculate edit-distance (can be skipped for RTF calculation)
         fine_grained (bool): calculate fine-grained corpus-level BLEU distributions based on input lengths
         oracle (bool): calculate oracle corpsu-level BLEU
         teacher_force (bool): conduct decoding in teacher-forcing mode
@@ -67,8 +68,7 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
 
     with codecs.open(hyp_trn_path, 'w', encoding='utf-8') as f_hyp, \
             codecs.open(ref_trn_path, 'w', encoding='utf-8') as f_ref:
-        while True:
-            batch, is_new_epoch = dataloader.next(recog_params.get('recog_batch_size'))
+        for batch in dataloader:
             if streaming or recog_params.get('recog_block_sync'):
                 nbest_hyps_id = models[0].decode_streaming(
                     batch['xs'], recog_params, dataloader.idx2token[0],
@@ -90,19 +90,19 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
                 nbest_hyps = [dataloader.idx2token[0](hyp_id) for hyp_id in nbest_hyps_id[b]]
 
                 # Write to trn
-                # speaker = str(batch['speakers'][b]).replace('-', '_')
+                speaker = str(batch['speakers'][b]).replace('-', '_')
                 if streaming:
                     utt_id = str(batch['utt_ids'][b]) + '_0000000_0000001'
                 else:
                     utt_id = str(batch['utt_ids'][b])
-                f_ref.write(ref + '\n')
-                f_hyp.write(nbest_hyps[0] + '\n')
+                f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
+                f_hyp.write(nbest_hyps[0] + ' (' + speaker + '-' + utt_id + ')\n')
                 logger.debug('utt-id (%d/%d): %s' % (n_utt + 1, len(dataloader), utt_id))
                 logger.debug('Ref: %s' % ref)
                 logger.debug('Hyp: %s' % nbest_hyps[0])
                 logger.debug('-' * 150)
 
-                if not streaming:
+                if edit_distance and not streaming:
                     list_of_references += [[ref.split(' ')]]
                     hypotheses += [nbest_hyps[0].split(' ')]
 
@@ -128,18 +128,15 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
                 if progressbar:
                     pbar.update(len(batch['utt_ids']))
 
-            if is_new_epoch:
-                break
-
     if progressbar:
         pbar.close()
 
     # Reset data counters
-    dataloader.reset()
+    dataloader.reset(is_new_epoch=True)
 
     c_bleu = corpus_bleu(list_of_references, hypotheses) * 100
 
-    if not streaming:
+    if edit_distance and not streaming:
         if oracle:
             c_bleu_oracle = corpus_bleu(list_of_references, hypotheses_oracle) * 100
             oracle_hit_rate = n_oracle_hit * 100 / n_utt
@@ -152,6 +149,6 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
                 logger.info('  corpus-level BLEU (%s): %.2f %% (%d)' %
                             (dataloader.set, c_bleu_bin, len_bin))
 
-    logger.debug('Corpus-level BLEU (%s): %.2f %%' % (dataloader.set, c_bleu))
+    logger.info('Corpus-level BLEU (%s): %.2f %%' % (dataloader.set, c_bleu))
 
     return c_bleu

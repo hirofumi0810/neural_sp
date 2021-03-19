@@ -16,11 +16,10 @@ from tqdm import tqdm
 from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.train_utils import (
-    compute_subsampling_factor,
     load_checkpoint,
     set_logger
 )
-from neural_sp.datasets.asr import build_dataloader
+from neural_sp.datasets.asr.build import build_dataloader
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
 
@@ -78,8 +77,7 @@ def main():
             os.mkdir(save_path)
 
         pbar = tqdm(total=len(dataloader))
-        while True:
-            batch, is_new_epoch = dataloader.next()
+        for batch in dataloader:
             trigger_points = model.ctc_forced_align(batch['xs'], batch['ys'])  # `[B, L]`
 
             for b in range(len(batch['xs'])):
@@ -93,9 +91,6 @@ def main():
                     f.write('%s %d\n' % ('<eos>', trigger_points[b, len(tokens)]))
 
             pbar.update(len(batch['xs']))
-
-            if is_new_epoch:
-                break
 
         pbar.close()
 

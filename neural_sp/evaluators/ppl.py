@@ -28,8 +28,8 @@ def check_lm(model):
         return False
 
 
-def eval_ppl(models, dataloader, batch_size=1, bptt=None,
-             n_caches=0, progressbar=False):
+def eval_ppl(models, dataloader, batch_size=1, bptt=None, n_caches=0,
+             progressbar=False):
     """Evaluate a Seq2seq or LM by perprexity and loss.
 
     Args:
@@ -37,7 +37,7 @@ def eval_ppl(models, dataloader, batch_size=1, bptt=None,
         dataloader (torch.utils.data.DataLoader): evaluation dataloader
         batch_size (int): batch size
         bptt (int): BPTT length
-        n_caches (int):
+        n_caches (int): number of state caches
         progressbar (bool): if True, visualize progressbar
     Returns:
         ppl (float): Average perplexity
@@ -55,8 +55,8 @@ def eval_ppl(models, dataloader, batch_size=1, bptt=None,
     if progressbar:
         pbar = tqdm(total=len(dataloader))
 
-    while True:
-        if is_lm:
+    if is_lm:
+        while True:
             ys, is_new_epoch = dataloader.next(batch_size, bptt)
             bs, time = ys.shape[:2]
             if n_caches > 0:
@@ -76,8 +76,11 @@ def eval_ppl(models, dataloader, batch_size=1, bptt=None,
 
                 if progressbar:
                     pbar.update(bs * (time - 1))
-        else:
-            batch, is_new_epoch = dataloader.next(batch_size)
+
+            if is_new_epoch:
+                break
+    else:
+        for batch in dataloader:
             bs = len(batch['ys'])
             loss, _ = models[0](batch, task='all', is_eval=True)
             total_loss += loss.item() * bs
@@ -87,19 +90,16 @@ def eval_ppl(models, dataloader, batch_size=1, bptt=None,
             if progressbar:
                 pbar.update(bs)
 
-        if is_new_epoch:
-            break
-
     if progressbar:
         pbar.close()
 
     # Reset data counters
-    dataloader.reset()
+    dataloader.reset(is_new_epoch=True)
 
     avg_loss = total_loss / n_tokens
     ppl = np.exp(avg_loss)
 
-    logger.debug('PPL (%s): %.2f %%' % (dataloader.set, ppl))
-    logger.debug('Loss (%s): %.2f %%' % (dataloader.set, avg_loss))
+    logger.info('PPL (%s): %.2f %%' % (dataloader.set, ppl))
+    logger.info('Loss (%s): %.2f %%' % (dataloader.set, avg_loss))
 
     return ppl, avg_loss
