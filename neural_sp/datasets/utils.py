@@ -6,8 +6,6 @@
 import codecs
 import random
 
-random.seed(1)
-
 
 def count_vocab_size(dict_path):
     vocab_count = 1  # for <blank>
@@ -32,7 +30,7 @@ def set_batch_size(batch_size, min_xlen, min_ylen, dynamic_batching):
     return max(1, batch_size)
 
 
-def shuffle_bucketing(df, batch_size, dynamic_batching):
+def shuffle_bucketing(df, batch_size, dynamic_batching, seed=None):
     indices_buckets = []  # list of list
     offset = 0
     while True:
@@ -47,6 +45,8 @@ def shuffle_bucketing(df, batch_size, dynamic_batching):
             break
 
     # shuffle buckets
+    if seed is not None:
+        random.seed(seed)
     random.shuffle(indices_buckets)
     return indices_buckets
 

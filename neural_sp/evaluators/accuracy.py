@@ -31,9 +31,7 @@ def eval_accuracy(models, dataloader, batch_size=1, progressbar=False):
     if progressbar:
         pbar = tqdm(total=len(dataloader))
 
-    while True:
-        batch, is_new_epoch = dataloader.next(batch_size)
-        bs = len(batch['ys'])
+    for batch in dataloader:
         _, observation = models[0](batch, task='all', is_eval=True)
         n_tokens_b = sum([len(y) for y in batch['ys']])
         _acc = observation.get('acc.att', observation.get('acc.att-sub1', 0))
@@ -41,16 +39,13 @@ def eval_accuracy(models, dataloader, batch_size=1, progressbar=False):
         n_tokens += n_tokens_b
 
         if progressbar:
-            pbar.update(bs)
-
-        if is_new_epoch:
-            break
+            pbar.update(len(batch['ys']))
 
     if progressbar:
         pbar.close()
 
     # Reset data counters
-    dataloader.reset()
+    dataloader.reset(is_new_epoch=True)
 
     accuracy = total_acc / n_tokens
 

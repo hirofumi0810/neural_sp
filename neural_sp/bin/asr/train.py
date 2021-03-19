@@ -29,6 +29,7 @@ from neural_sp.bin.train_utils import (
     set_logger,
     set_save_path
 )
+from neural_sp.datasets.asr.build import build_dataloader
 from neural_sp.evaluators.accuracy import eval_accuracy
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
@@ -36,7 +37,6 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
-from neural_sp.datasets.asr import build_dataloader
 from neural_sp.models.data_parallel import (
     CustomDataParallel,
     CPUWrapperASR
@@ -97,7 +97,7 @@ def main():
                                tsv_path=args.dev_set,
                                tsv_path_sub1=args.dev_set_sub1,
                                tsv_path_sub2=args.dev_set_sub2,
-                               batch_size=batch_size,
+                               batch_size=1 if 'transducer' in args.dec_type else batch_size,
                                num_workers=args.n_gpus,
                                pin_memory=False,
                                word_alignment_dir=args.dev_word_alignment,
@@ -379,12 +379,15 @@ def train(model, train_set, dev_set, eval_sets,
     epoch_detail_prev = train_set.epoch_detail
     start_time_step = time.time()
     start_time_epoch = time.time()
-    for batch_train, is_new_epoch in train_set:
+    n_rest = len(train_set)
+    for batch_train in train_set:
         # Compute loss in the training set
         if args.discourse_aware and batch_train['sessions'][0] != session_prev:
             model.module.reset_session()
         session_prev = batch_train['sessions'][0]
         _accum_n_steps += 1
+        n_rest -= len(batch_train['utt_ids'])
+        is_new_epoch = (n_rest == 0)
 
         # Change mini-batch depending on task
         reporter.add_scalar('learning_rate', scheduler.lr)
@@ -434,7 +437,7 @@ def train(model, train_set, dev_set, eval_sets,
 
         if reporter.n_steps > 0 and reporter.n_steps % args.print_step == 0:
             # Compute loss in the dev set
-            batch_dev = iter(dev_set).next(batch_size=1 if 'transducer' in args.dec_type else None)[0]
+            batch_dev = next(dev_set)
             loss, observation = model(batch_dev, task='all', is_eval=True)
             reporter.add_observation(observation, is_eval=True)
             loss_dev = loss.item()
@@ -479,9 +482,7 @@ def train(model, train_set, dev_set, eval_sets,
                     validate([model.module], eval_set, args, sub_epoch, logger)
             epoch_detail_prev = train_set.epoch_detail
 
-        if is_new_epoch:
-            break
-
+    train_set.reset(is_new_epoch=True)
     logger.info('========== EPOCH:%d (%.2f min) ==========' %
                 (reporter.n_epochs + 1, (time.time() - start_time_epoch) / 60))
     pbar_epoch.close()

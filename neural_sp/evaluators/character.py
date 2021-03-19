@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def eval_char(models, dataloader, recog_params, epoch,
               recog_dir=None, streaming=False, progressbar=False, task_idx=0,
-              fine_grained=False, oracle=False, teacher_force=False):
+              edit_distance=True, fine_grained=False, oracle=False, teacher_force=False):
     """Evaluate a character-level model by WER & CER.
 
     Args:
@@ -27,6 +27,7 @@ def eval_char(models, dataloader, recog_params, epoch,
         recog_dir (str):
         streaming (bool): streaming decoding for session-level evaluation
         progressbar (bool): visualize progressbar
+        edit_distance (bool): calculate edit-distance (can be skipped for RTF calculation)
         task_idx (int): index of target task in interest
             0: main task
             1: sub task
@@ -83,8 +84,7 @@ def eval_char(models, dataloader, recog_params, epoch,
 
     with codecs.open(hyp_trn_path, 'w', encoding='utf-8') as f_hyp, \
             codecs.open(ref_trn_path, 'w', encoding='utf-8') as f_ref:
-        while True:
-            batch, is_new_epoch = dataloader.next(recog_params.get('recog_batch_size'))
+        for batch in dataloader:
             if streaming or recog_params.get('recog_block_sync'):
                 nbest_hyps_id = models[0].decode_streaming(
                     batch['xs'], recog_params, dataloader.idx2token[0],
@@ -126,7 +126,7 @@ def eval_char(models, dataloader, recog_params, epoch,
                 logger.debug('Hyp: %s' % nbest_hyps[0])
                 logger.debug('-' * 150)
 
-                if not streaming:
+                if edit_distance and not streaming:
                     if ('char' in dataloader.unit and 'nowb' not in dataloader.unit) or (task_idx > 0 and dataloader.unit_sub1 == 'char'):
                         # Compute WER
                         err_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
@@ -177,16 +177,13 @@ def eval_char(models, dataloader, recog_params, epoch,
                 if progressbar:
                     pbar.update(len(batch['utt_ids']))
 
-            if is_new_epoch:
-                break
-
     if progressbar:
         pbar.close()
 
     # Reset data counters
-    dataloader.reset()
+    dataloader.reset(is_new_epoch=True)
 
-    if not streaming:
+    if edit_distance and not streaming:
         if ('char' in dataloader.unit and 'nowb' not in dataloader.unit) or (task_idx > 0 and dataloader.unit_sub1 == 'char'):
             wer /= n_word
             n_sub_w /= n_word
