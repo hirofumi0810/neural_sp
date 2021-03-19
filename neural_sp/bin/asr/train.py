@@ -436,7 +436,7 @@ def train(model, train_set, dev_set, eval_sets,
 
         if reporter.n_steps > 0 and reporter.n_steps % args.print_step == 0:
             # Compute loss in the dev set
-            batch_dev = next(dev_set)
+            batch_dev = next(iter(dev_set))
             loss, observation = model(batch_dev, task='all', is_eval=True)
             reporter.add_observation(observation, is_eval=True)
             loss_dev = loss.item()
