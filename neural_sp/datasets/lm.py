@@ -152,7 +152,7 @@ class Dataset(object):
         """Percentage of the current epoch."""
         return float(self.offset * self.batch_size) / len(self)
 
-    def reset(self):
+    def reset(self, is_new_epoch=False):
         """Reset data counter and offset."""
         if self.shuffle:
             self.df = self.df.reindex(np.random.permutation(self.df.index))
