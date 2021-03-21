@@ -545,8 +545,10 @@ class Speech2Text(ModelBase):
 
         return eout, elens
 
+    @torch.no_grad()
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
         """Simulate streaming encoding+decoding. Both encoding and decoding are performed in the online mode."""
+        self.eval()
         block_size = params.get('recog_block_sync_size')  # before subsampling
         cache_emb = params.get('recog_cache_embedding')
         ctc_weight = params.get('recog_ctc_weight')
@@ -569,15 +571,14 @@ class Speech2Text(ModelBase):
         hyps_nobd = []
         best_hyp_id_session = []
         is_reset = False
-
         stdout = False
 
-        self.eval()
         helper = BeamSearch(params.get('recog_beam_width'),
                             self.eos,
                             params.get('recog_ctc_weight'),
                             params.get('recog_lm_weight'),
                             self.device)
+
         lm = getattr(self, 'lm_fwd', None)
         lm_second = getattr(self, 'lm_second', None)
         lm = helper.verify_lm_eval_mode(lm, params.get('recog_lm_weight'), cache_emb)
@@ -671,7 +672,6 @@ class Speech2Text(ModelBase):
                 # pick up the best hyp from ended and active hypotheses
                 if len(best_hyp_id_prefix) > 0:
                     best_hyp_id_session.extend(best_hyp_id_prefix)
-                self.dec_fwd.n_frames = 0  # TODO: move this
 
                 # reset
                 streaming.reset(stdout=stdout)
@@ -700,6 +700,7 @@ class Speech2Text(ModelBase):
     def last_success_frame_ratio(self):
         return getattr(self.dec_fwd, 'last_success_frame_ratio', 0)
 
+    @torch.no_grad()
     def decode(self, xs, params, idx2token, exclude_eos=False,
                refs_id=None, refs=None, utt_ids=None, speakers=None,
                task='ys', ensemble_models=[], trigger_points=None, teacher_force=False):
@@ -723,6 +724,7 @@ class Speech2Text(ModelBase):
             aws (List[np.ndarray]): length `[B]`, which contains arrays of size `[L, T, n_heads]`
 
         """
+        self.eval()
         if task.split('.')[0] == 'ys':
             dir = 'bwd' if self.bwd_weight > 0 and params['recog_bwd_attention'] else 'fwd'
         elif task.split('.')[0] == 'ys_sub1':
@@ -737,89 +739,87 @@ class Speech2Text(ModelBase):
                 self.reset_session()
             self.utt_id_prev = utt_ids[0]
 
-        self.eval()
-        with torch.no_grad():
-            # Encode input features
-            if params['recog_streaming_encoding']:
-                eouts, elens = self.encode_streaming(xs, params, task)
-            else:
-                eout_dict = self.encode(xs, task)
-                eouts = eout_dict[task]['xs']
-                elens = eout_dict[task]['xlens']
+        # Encode input features
+        if params['recog_streaming_encoding']:
+            eouts, elens = self.encode_streaming(xs, params, task)
+        else:
+            eout_dict = self.encode(xs, task)
+            eouts = eout_dict[task]['xs']
+            elens = eout_dict[task]['xlens']
 
-            # CTC
-            if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
+        # CTC
+        if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
+            lm = getattr(self, 'lm_' + dir, None)
+            lm_second = getattr(self, 'lm_second', None)
+            lm_second_bwd = None  # TODO
+
+            if params.get('recog_beam_width') == 1:
+                nbest_hyps_id = getattr(self, 'dec_' + dir).ctc.greedy(
+                    eouts, elens)
+            else:
+                nbest_hyps_id = getattr(self, 'dec_' + dir).ctc.beam_search(
+                    eouts, elens, params, idx2token,
+                    lm, lm_second, lm_second_bwd,
+                    1, refs_id, utt_ids, speakers)
+            return nbest_hyps_id, None
+
+        # Attention/RNN-T
+        elif params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
+            best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
+                eouts, elens, params['recog_max_len_ratio'], idx2token,
+                exclude_eos, refs_id, utt_ids, speakers)
+            nbest_hyps_id = [[hyp] for hyp in best_hyps_id]
+        else:
+            assert params['recog_batch_size'] == 1
+
+            scores_ctc = None
+            if params['recog_ctc_weight'] > 0:
+                scores_ctc = self.dec_fwd.ctc.scores(eouts)
+
+            # forward-backward decoding
+            if params['recog_fwd_bwd_attention']:
+                lm = getattr(self, 'lm_fwd', None)
+                lm_bwd = getattr(self, 'lm_bwd', None)
+
+                # forward decoder
+                nbest_hyps_id_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
+                    eouts, elens, params, idx2token,
+                    lm, None, lm_bwd, scores_ctc,
+                    params['recog_beam_width'], False, refs_id, utt_ids, speakers)
+
+                # backward decoder
+                nbest_hyps_id_bwd, aws_bwd, scores_bwd, _ = self.dec_bwd.beam_search(
+                    eouts, elens, params, idx2token,
+                    lm_bwd, None, lm, scores_ctc,
+                    params['recog_beam_width'], False, refs_id, utt_ids, speakers)
+
+                # forward-backward attention
+                best_hyps_id = fwd_bwd_attention(
+                    nbest_hyps_id_fwd, aws_fwd, scores_fwd,
+                    nbest_hyps_id_bwd, aws_bwd, scores_bwd,
+                    self.eos, params['recog_gnmt_decoding'], params['recog_length_penalty'],
+                    idx2token, refs_id)
+                nbest_hyps_id = [[hyp] for hyp in best_hyps_id]
+                aws = None
+            else:
+                # ensemble
+                ensmbl_eouts, ensmbl_elens, ensmbl_decs = [], [], []
+                if len(ensemble_models) > 0:
+                    for i_e, model in enumerate(ensemble_models):
+                        enc_outs_e = model.encode(xs, task)
+                        ensmbl_eouts += [enc_outs_e[task]['xs']]
+                        ensmbl_elens += [enc_outs_e[task]['xlens']]
+                        ensmbl_decs += [getattr(model, 'dec_' + dir)]
+                        # NOTE: only support for the main task now
+
                 lm = getattr(self, 'lm_' + dir, None)
                 lm_second = getattr(self, 'lm_second', None)
-                lm_second_bwd = None  # TODO
+                lm_bwd = getattr(self, 'lm_bwd' if dir == 'fwd' else 'lm_bwd', None)
 
-                if params.get('recog_beam_width') == 1:
-                    nbest_hyps_id = getattr(self, 'dec_' + dir).ctc.greedy(
-                        eouts, elens)
-                else:
-                    nbest_hyps_id = getattr(self, 'dec_' + dir).ctc.beam_search(
-                        eouts, elens, params, idx2token,
-                        lm, lm_second, lm_second_bwd,
-                        1, refs_id, utt_ids, speakers)
-                return nbest_hyps_id, None
+                nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
+                    eouts, elens, params, idx2token,
+                    lm, lm_second, lm_bwd, scores_ctc,
+                    params['recog_beam_width'], exclude_eos, refs_id, utt_ids, speakers,
+                    ensmbl_eouts, ensmbl_elens, ensmbl_decs)
 
-            # Attention/RNN-T
-            elif params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
-                best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
-                    eouts, elens, params['recog_max_len_ratio'], idx2token,
-                    exclude_eos, refs_id, utt_ids, speakers)
-                nbest_hyps_id = [[hyp] for hyp in best_hyps_id]
-            else:
-                assert params['recog_batch_size'] == 1
-
-                scores_ctc = None
-                if params['recog_ctc_weight'] > 0:
-                    scores_ctc = self.dec_fwd.ctc.scores(eouts)
-
-                # forward-backward decoding
-                if params['recog_fwd_bwd_attention']:
-                    lm = getattr(self, 'lm_fwd', None)
-                    lm_bwd = getattr(self, 'lm_bwd', None)
-
-                    # forward decoder
-                    nbest_hyps_id_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
-                        eouts, elens, params, idx2token,
-                        lm, None, lm_bwd, scores_ctc,
-                        params['recog_beam_width'], False, refs_id, utt_ids, speakers)
-
-                    # backward decoder
-                    nbest_hyps_id_bwd, aws_bwd, scores_bwd, _ = self.dec_bwd.beam_search(
-                        eouts, elens, params, idx2token,
-                        lm_bwd, None, lm, scores_ctc,
-                        params['recog_beam_width'], False, refs_id, utt_ids, speakers)
-
-                    # forward-backward attention
-                    best_hyps_id = fwd_bwd_attention(
-                        nbest_hyps_id_fwd, aws_fwd, scores_fwd,
-                        nbest_hyps_id_bwd, aws_bwd, scores_bwd,
-                        self.eos, params['recog_gnmt_decoding'], params['recog_length_penalty'],
-                        idx2token, refs_id)
-                    nbest_hyps_id = [[hyp] for hyp in best_hyps_id]
-                    aws = None
-                else:
-                    # ensemble
-                    ensmbl_eouts, ensmbl_elens, ensmbl_decs = [], [], []
-                    if len(ensemble_models) > 0:
-                        for i_e, model in enumerate(ensemble_models):
-                            enc_outs_e = model.encode(xs, task)
-                            ensmbl_eouts += [enc_outs_e[task]['xs']]
-                            ensmbl_elens += [enc_outs_e[task]['xlens']]
-                            ensmbl_decs += [getattr(model, 'dec_' + dir)]
-                            # NOTE: only support for the main task now
-
-                    lm = getattr(self, 'lm_' + dir, None)
-                    lm_second = getattr(self, 'lm_second', None)
-                    lm_bwd = getattr(self, 'lm_bwd' if dir == 'fwd' else 'lm_bwd', None)
-
-                    nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
-                        eouts, elens, params, idx2token,
-                        lm, lm_second, lm_bwd, scores_ctc,
-                        params['recog_beam_width'], exclude_eos, refs_id, utt_ids, speakers,
-                        ensmbl_eouts, ensmbl_elens, ensmbl_decs)
-
-            return nbest_hyps_id, aws
+        return nbest_hyps_id, aws
