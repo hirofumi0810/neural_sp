@@ -85,10 +85,12 @@ def eval_char(models, dataloader, recog_params, epoch,
     with codecs.open(hyp_trn_path, 'w', encoding='utf-8') as f_hyp, \
             codecs.open(ref_trn_path, 'w', encoding='utf-8') as f_ref:
         for batch in dataloader:
+            speakers = batch['sessions' if dataloader.corpus == 'swbd' else 'speakers']
             if streaming or recog_params.get('recog_block_sync'):
                 nbest_hyps_id = models[0].decode_streaming(
                     batch['xs'], recog_params, dataloader.idx2token[0],
-                    exclude_eos=True)[0]
+                    exclude_eos=True,
+                    speaker=speakers[0])[0]
             else:
                 nbest_hyps_id = models[0].decode(
                     batch['xs'], recog_params,
@@ -96,7 +98,7 @@ def eval_char(models, dataloader, recog_params, epoch,
                     exclude_eos=True,
                     refs_id=batch['ys'] if task_idx == 0 else batch['ys_sub' + str(task_idx)],
                     utt_ids=batch['utt_ids'],
-                    speakers=batch['sessions' if dataloader.corpus == 'swbd' else 'speakers'],
+                    speakers=speakers,
                     task=task,
                     ensemble_models=models[1:] if len(models) > 1 else [])[0]
 
