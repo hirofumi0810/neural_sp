@@ -1453,7 +1453,7 @@ class RNNDecoder(DecoderBase):
         return y, cv, aw, dstates
 
     def beam_search_block_sync(self, eouts, params, helper, idx2token,
-                               hyps, hyps_nobd, lm, ctc_log_probs=None,
+                               hyps, hyps_nobd, lm, ctc_log_probs=None, speaker=None,
                                ignore_eos=False):
         assert eouts.size(0) == 1
         assert self.attn_type == 'mocha'
@@ -1474,8 +1474,14 @@ class RNNDecoder(DecoderBase):
             self.score.reset()
             cv = eouts.new_zeros(1, 1, self.enc_n_units)
             dstates = self.zero_state(1)
-            lmstate = self.lmstate_final if lm_state_CO else None
+            lmstate = None
             ctc_state = None
+
+            if speaker is not None:
+                if lm_state_CO and speaker == self.prev_spk:
+                    lmstate = self.lmstate_final
+                self.prev_spk = speaker
+            self.lmstate_final = None  # reset
 
             # For joint CTC-Attention decoding
             self.ctc_prefix_scorer = None
@@ -1521,7 +1527,7 @@ class RNNDecoder(DecoderBase):
 
             new_hyps = []
             for j, beam in enumerate(hyps):
-                # no token boundary found in the current block for j-th utterance
+                # no token boundary found in the current block for j-th hypthesis
                 no_boundary = aw[j].sum().item() == 0
                 if no_boundary:
                     hyps_nobd.append(beam.copy())  # this is important to remove repeated hyps

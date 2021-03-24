@@ -546,7 +546,8 @@ class Speech2Text(ModelBase):
         return eout, elens
 
     @torch.no_grad()
-    def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
+    def decode_streaming(self, xs, params, idx2token, exclude_eos=False,
+                         speaker=None, task='ys'):
         """Simulate streaming encoding+decoding. Both encoding and decoding are performed in the online mode."""
         self.eval()
         block_size = params.get('recog_block_sync_size')  # before subsampling
@@ -638,7 +639,8 @@ class Speech2Text(ModelBase):
                     for i in range(math.ceil(eout_block.size(1) / block_size)):
                         eout_block_i = eout_block[:, i * block_size:(i + 1) * block_size]
                         end_hyps, hyps, hyps_nobd = self.dec_fwd.beam_search_block_sync(
-                            eout_block_i, params, helper, idx2token, hyps, hyps_nobd, lm)
+                            eout_block_i, params, helper, idx2token, hyps, hyps_nobd, lm,
+                            speaker=speaker)
                 elif isinstance(self.dec_fwd, TransformerDecoder):
                     raise NotImplementedError
                 else:
