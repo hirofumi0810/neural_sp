@@ -125,9 +125,9 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
                             n_oracle_hit += len(batch['utt_ids'])
                         hypotheses_oracle += [nbest_hyps[oracle_idx].split(' ')]
 
-                n_utt += len(batch['utt_ids'])
-                if progressbar:
-                    pbar.update(len(batch['utt_ids']))
+            n_utt += len(batch['utt_ids'])
+            if progressbar:
+                pbar.update(len(batch['utt_ids']))
 
     if progressbar:
         pbar.close()

@@ -120,9 +120,9 @@ def eval_phone(models, dataloader, recog_params, epoch,
                             n_oracle_hit += len(batch['utt_ids'])
                         per_oracle += pers_b[oracle_idx]
 
-                n_utt += len(batch['utt_ids'])
-                if progressbar:
-                    pbar.update(len(batch['utt_ids']))
+            n_utt += len(batch['utt_ids'])
+            if progressbar:
+                pbar.update(len(batch['utt_ids']))
 
     if progressbar:
         pbar.close()

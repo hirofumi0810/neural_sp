@@ -49,7 +49,7 @@ class CustomDataLoader(DataLoader):
     @property
     def epoch_detail(self):
         """Progress of the current epoch."""
-        epoch_ratio = self.batch_sampler._offset / len(self)
+        epoch_ratio = self.batch_sampler.offset / len(self)
         # NOTE: this is not accurate when num_workers > 0
         return epoch_ratio
 
