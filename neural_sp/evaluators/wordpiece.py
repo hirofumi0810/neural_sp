@@ -152,9 +152,9 @@ def eval_wordpiece(models, dataloader, recog_params, epoch,
                         last_success_frame_ratio += models[0].last_success_frame_ratio()
                     quantity_rate += models[0].quantity_rate()
 
-                n_utt += len(batch['utt_ids'])
-                if progressbar:
-                    pbar.update(len(batch['utt_ids']))
+            n_utt += len(batch['utt_ids'])
+            if progressbar:
+                pbar.update(len(batch['utt_ids']))
 
     if progressbar:
         pbar.close()

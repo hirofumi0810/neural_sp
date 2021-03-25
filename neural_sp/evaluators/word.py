@@ -174,9 +174,9 @@ def eval_word(models, dataloader, recog_params, epoch,
                         else:
                             wer_dist[xlen_bin] = [err_b / 100]
 
-                n_utt += len(batch['utt_ids'])
-                if progressbar:
-                    pbar.update(len(batch['utt_ids']))
+            n_utt += len(batch['utt_ids'])
+            if progressbar:
+                pbar.update(len(batch['utt_ids']))
 
     if progressbar:
         pbar.close()

@@ -38,6 +38,7 @@ class CustomBatchSampler(BatchSampler):
 
         self.df = df
         self.batch_size = batch_size
+        self.batch_size_tmp = None
 
         self.dynamic_batching = dynamic_batching
         self.shuffle_bucket = shuffle_bucket
@@ -46,7 +47,7 @@ class CustomBatchSampler(BatchSampler):
         self.longform_xmax = longform_max_n_frames
 
         self._offset = 0
-        self._epoch = 0
+        # NOTE: epoch should not be counted in BatchSampler
 
         if discourse_aware:
             self.indices_buckets = discourse_bucketing(df, batch_size)
@@ -75,6 +76,10 @@ class CustomBatchSampler(BatchSampler):
             if is_new_epoch:
                 break
 
+    @property
+    def offset(self):
+        return self._offset
+
     def calculate_iteration(self):
         self._iteration = 0
         is_new_epoch = False
@@ -89,6 +94,7 @@ class CustomBatchSampler(BatchSampler):
 
             Args:
                 batch_size (int): size of mini-batch
+                epoch (int): current epoch
 
         """
         if batch_size is None:
@@ -104,12 +110,11 @@ class CustomBatchSampler(BatchSampler):
             self.indices_buckets = shuffle_bucketing(self.df, batch_size, self.dynamic_batching, seed=epoch)
         else:
             self.indices = list(self.df.index)
+            self.batch_size_tmp = batch_size
 
-    def sample_index(self, batch_size=None):
+    def sample_index(self):
         """Sample data indices of mini-batch.
 
-        Args:
-            batch_size (int): size of mini-batch
         Returns:
             indices (np.ndarray): indices of dataframe in the current mini-batch
 
@@ -123,7 +128,9 @@ class CustomBatchSampler(BatchSampler):
                 # Shuffle utterances in mini-batch
                 indices = random.sample(indices, len(indices))
         else:
-            if batch_size is None:
+            if self.batch_size_tmp is not None:
+                batch_size = self.batch_size_tmp
+            else:
                 batch_size = self.batch_size
 
             # Change batch size dynamically
