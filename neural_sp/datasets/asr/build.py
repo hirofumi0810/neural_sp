@@ -97,5 +97,6 @@ def custom_collate_fn(data):
         trigger_points = np.zeros((bs, ymax + 1), dtype=np.int32)
         for b in range(bs):
             trigger_points[b, :len(tmp['trigger_points'][b])] = tmp['trigger_points'][b]
+        tmp['trigger_points'] = trigger_points
 
     return tmp

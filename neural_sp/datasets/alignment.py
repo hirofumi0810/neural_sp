@@ -15,13 +15,16 @@ class WordAlignmentConverter(object):
     Args:
         dict_path (str): path to a dictionary file
         wp_model ():
+        split_type (str): character_length or uniform
 
     """
 
-    def __init__(self, dict_path, wp_model):
+    def __init__(self, dict_path, wp_model, split_type='character_length'):
         # Load a dictionary file
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(wp_model)
+        assert split_type in ['character_length', 'uniform']
+        self.split_type = split_type
 
     def __call__(self, alignment_dir, speaker, utt_id, text):
         """Convert word alignment into word-piece alignment.
@@ -32,7 +35,7 @@ class WordAlignmentConverter(object):
             utt_id (str): utterance ID
             text (str): reference
         Returns:
-            boundaries (list): token boundaries
+            boundaries (np.ndarray): token boundaries
 
         """
         speed_rate = 1.
@@ -63,8 +66,12 @@ class WordAlignmentConverter(object):
                     end = float(end) * 100 * speed_rate
                     assert start >= 0
                     assert end >= 0
-                    boundaries += [start + (end - start) * len(''.join(wps_single_word[:j + 1])) / len(word)
-                                   for j in range(len(wps_single_word))]
+                    if self.split_type == 'character_length':
+                        boundaries += [start + (end - start) * len(''.join(wps_single_word[:j + 1])) / len(word)
+                                       for j in range(len(wps_single_word))]
+                    elif self.split_type == 'uniform':
+                        boundaries += [start + (end - start) * (j + 1) / len(wps_single_word)
+                                       for j in range(len(wps_single_word))]
                     wps_single_word = []  # reset
                 wp = wp[1:]  # remove word boundary mark
             wps_single_word.append(wp)
@@ -75,8 +82,12 @@ class WordAlignmentConverter(object):
         end = float(end) * 100 * speed_rate
         assert start >= 0
         assert end >= 0
-        boundaries += [start + (end - start) * len(''.join(wps_single_word[:j + 1])) / len(word)
-                       for j in range(len(wps_single_word))]
+        if self.split_type == 'character_length':
+            boundaries += [start + (end - start) * len(''.join(wps_single_word[:j + 1])) / len(word)
+                           for j in range(len(wps_single_word))]
+        elif self.split_type == 'uniform':
+            boundaries += [start + (end - start) * (j + 1) / len(wps_single_word)
+                           for j in range(len(wps_single_word))]
         if len(boundaries) > 1:
             diff = np.array(boundaries[1:], dtype=np.int32) - np.array(boundaries[:-1], dtype=np.int32)
             assert (diff < 0).sum() == 0
@@ -92,7 +103,7 @@ def load_ctc_alignment(alignment_dir, speaker, utt_id):
         speaker (str): speaker ID
         utt_id (str): utterance ID
     Returns:
-        boundaries (list): token boundaries
+        boundaries (np.ndarray): token boundaries
 
     """
     alignment_path = os.path.join(alignment_dir, speaker, utt_id + '.txt')

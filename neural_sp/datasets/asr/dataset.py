@@ -151,6 +151,7 @@ class CustomDataset(Dataset):
             else:
                 setattr(self, 'df_sub' + str(i), None)
 
+        self.wav_input = df['feat_path'][0].split('.')[-1] in ['wav']
         self._input_dim = kaldiio.load_mat(df['feat_path'][0]).shape[-1]
 
         # Remove inappropriate utterances
@@ -311,8 +312,8 @@ class CustomDataset(Dataset):
             assert trigger_points.max() <= xlen - 1, (p, xlen)
             trigger_points //= self.subsample_factor
         elif self.ctc_alignment_dir is not None:
-            trigger_points = np.zeros((1, self.df['ylen'][i] + 1), dtype=np.int32)
-            p = self.df['trigger_points'][i]  # including <eos>
+            trigger_points = np.zeros((self.df['ylen'][i] + 1), dtype=np.int32)
+            p = self.df['trigger_points'][i]  # <eos> is included
             trigger_points[:len(p)] = p  # already 0-indexed
 
         # main outputs
