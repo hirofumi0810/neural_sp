@@ -131,10 +131,10 @@ class TransformerEncoder(EncoderBase):
         self.lookaheads = lookaheads
         if sum(lookaheads) > 0:
             assert self.unidir
-        self.chunk_size_left = int(chunk_size_left.split('_')[-1]) // n_stacks
-        self.chunk_size_current = int(chunk_size_current.split('_')[-1]) // n_stacks
-        self.chunk_size_right = int(chunk_size_right.split('_')[-1]) // n_stacks
-        self.lc_bidir = self.chunk_size_current > 0 and enc_type != 'conv' and 'uni' not in enc_type
+        self.N_l = int(chunk_size_left.split('_')[-1]) // n_stacks
+        self.N_c = int(chunk_size_current.split('_')[-1]) // n_stacks
+        self.N_r = int(chunk_size_right.split('_')[-1]) // n_stacks
+        self.lc_bidir = self.N_c > 0 and enc_type != 'conv' and 'uni' not in enc_type
         self.cnn_lookahead = self.unidir or enc_type == 'conv'
         self.streaming_type = streaming_type if self.lc_bidir else ''
         # -: past context
@@ -156,10 +156,10 @@ class TransformerEncoder(EncoderBase):
         # chunk4:     -- --|**|
         # chunk5:        -- --|**|
         if self.unidir:
-            assert self.chunk_size_left == self.chunk_size_current == self.chunk_size_right == 0
+            assert self.N_l == self.N_c == self.N_r == 0
         if self.streaming_type == 'mask':
-            assert self.chunk_size_right == 0
-            assert self.chunk_size_left % self.chunk_size_current == 0
+            assert self.N_r == 0
+            assert self.N_l % self.N_c == 0
             # NOTE: this is important to cache CNN output at each chunk
         if self.lc_bidir:
             assert n_layers_sub1 == 0
@@ -228,12 +228,9 @@ class TransformerEncoder(EncoderBase):
             else:
                 raise NotImplementedError(subsample_type)
 
-        if self.chunk_size_left > 0:
-            assert self.chunk_size_left % self._factor == 0
-        if self.chunk_size_current > 0:
-            assert self.chunk_size_current % self._factor == 0
-        if self.chunk_size_right > 0:
-            assert self.chunk_size_right % self._factor == 0
+        assert self.N_l % self._factor == 0
+        assert self.N_c % self._factor == 0
+        assert self.N_r % self._factor == 0
 
         self.pos_enc, self.pos_emb = None, None
         self.u_bias, self.v_bias = None, None
@@ -417,7 +414,7 @@ class TransformerEncoder(EncoderBase):
     def calculate_cache_size(self):
         """Calculate the maximum cache size per layer."""
         cache_size = self._total_chunk_size_left()  # after CNN subsampling
-        N_l = self.chunk_size_left // self.conv_factor
+        N_l = self.N_l // self.conv_factor
         cache_sizes = []
         for lth in range(self.n_layers):
             cache_sizes.append(cache_size)
@@ -433,9 +430,9 @@ class TransformerEncoder(EncoderBase):
            This corresponds to the frame length after CNN subsampling.
         """
         if self.streaming_type == 'reshape':
-            return self.chunk_size_left // self.conv_factor
+            return self.N_l // self.conv_factor
         elif self.streaming_type == 'mask':
-            return (self.chunk_size_left // self.conv_factor) * self.n_layers
+            return (self.N_l // self.conv_factor) * self.n_layers
         elif self.unidir:
             return 10000 // self.conv_factor
         else:
@@ -466,7 +463,7 @@ class TransformerEncoder(EncoderBase):
         n_chunks = 0
         unidir = self.unidir
         lc_bidir = self.lc_bidir
-        N_l, N_c, N_r = self.chunk_size_left, self.chunk_size_current, self.chunk_size_right
+        N_l, N_c, N_r = self.N_l, self.N_c, self.N_r
 
         if streaming and self.streaming_type == 'mask':
             assert xmax <= N_c
