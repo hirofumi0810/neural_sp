@@ -553,6 +553,7 @@ class Speech2Text(ModelBase):
         block_size = params.get('recog_block_sync_size')  # before subsampling
         cache_emb = params.get('recog_cache_embedding')
         ctc_weight = params.get('recog_ctc_weight')
+        backoff = True
 
         assert task == 'ys'
         assert self.input_type == 'speech'
@@ -593,11 +594,20 @@ class Speech2Text(ModelBase):
 
         self.enc.reset_cache()
         eout_block_tail = None
+        x_block_prev, xlen_block_prev = None, None
         while True:
             # Encode input features block by block
             x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feat()
             if not is_transformer_enc and is_reset:
                 self.enc.reset_cache()
+                if backoff:
+                    self.encode([x_block_prev], 'all',
+                                streaming=True,
+                                cnn_lookback=cnn_lookback,
+                                cnn_lookahead=cnn_lookahead,
+                                xlen_block=xlen_block_prev)
+            x_block_prev = x_block
+            xlen_block_prev = xlen_block
             eout_block_dict = self.encode([x_block], 'all',
                                           streaming=True,
                                           cnn_lookback=cnn_lookback,
@@ -657,9 +667,9 @@ class Speech2Text(ModelBase):
                         # Segmentation strategy 2:
                         # If <eos> is emitted from the decoder (not CTC),
                         # the current block is segmented.
-                        if not is_reset:
+                        if (not is_reset) and (not streaming.safeguard_reset):
                             streaming._bd_offset = eout_block.size(1) - 1  # TODO: fix later
-                        is_reset = True
+                            is_reset = True
 
                     if len(best_hyp_id_prefix_viz) > 0:
                         n_frames = self.dec_fwd.ctc.n_frames if ctc_weight == 1 or self.ctc_weight == 1 else self.dec_fwd.n_frames

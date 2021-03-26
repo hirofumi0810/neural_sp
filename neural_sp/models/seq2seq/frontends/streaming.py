@@ -39,25 +39,25 @@ class Streaming(object):
 
         # latency related
         self._factor = encoder.subsampling_factor
-        self.N_l = getattr(encoder, 'chunk_size_left', 0)  # for LC-Transformer/Conformer
-        self.N_c = encoder.chunk_size_current
-        self.N_r = encoder.chunk_size_right
+        self.N_l = getattr(encoder, 'N_l', 0)  # for LC-Transformer/Conformer
+        self.N_c = encoder.N_c
+        self.N_r = encoder.N_r
         if self.streaming_type == 'mask':
             self.N_l = 0
             # NOTE: context in previous chunks are cached inside the encoder
         if self.N_c <= 0 and self.N_r <= 0:
-            self.N_c = params['recog_block_sync_size']  # for unidirectional encoder
+            self.N_c = params.get('recog_block_sync_size')  # for unidirectional encoder
             assert self.N_c % self._factor == 0
         # NOTE: these lengths are the ones before subsampling
 
         # threshold for CTC-VAD
         self.blank_id = 0
-        self.is_ctc_vad = params['recog_ctc_vad']
-        self.BLANK_THRESHOLD = params['recog_ctc_vad_blank_threshold']
-        self.SPIKE_THRESHOLD = params['recog_ctc_vad_spike_threshold']
-        self.MAX_N_ACCUM_FRAMES = params['recog_ctc_vad_n_accum_frames']
-        assert params['recog_ctc_vad_blank_threshold'] % self._factor == 0
-        assert params['recog_ctc_vad_n_accum_frames'] % self._factor == 0
+        self.is_ctc_vad = params.get('recog_ctc_vad')
+        self.BLANK_THRESHOLD = params.get('recog_ctc_vad_blank_threshold')
+        self.SPIKE_THRESHOLD = params.get('recog_ctc_vad_spike_threshold')
+        self.MAX_N_ACCUM_FRAMES = params.get('recog_ctc_vad_n_accum_frames')
+        assert self.BLANK_THRESHOLD % self._factor == 0
+        assert self.MAX_N_ACCUM_FRAMES % self._factor == 0
         # NOTE: these parameters are based on 10ms/frame
 
         self._offset = 0  # global time offset in the session
@@ -94,6 +94,10 @@ class Streaming(object):
     @property
     def n_cache_block(self):
         return len(self._eout_blocks)
+
+    @property
+    def safeguard_reset(self):
+        return self._n_accum_frames < self.MAX_N_ACCUM_FRAMES
 
     def reset(self, stdout=False):
         self._eout_blocks = []
@@ -172,7 +176,7 @@ class Streaming(object):
         """
         is_reset = False  # detect the first boundary in the same block
 
-        if self._n_accum_frames < self.MAX_N_ACCUM_FRAMES:
+        if self.safeguard_reset:
             return is_reset
 
         assert ctc_probs_block is not None
@@ -182,8 +186,7 @@ class Streaming(object):
         # encoder states will be carried over to the next block.
         # Otherwise, the current block is segmented at the point where
         # _n_blanks surpasses the threshold.
-        topk_ids_block = torch.topk(ctc_probs_block, k=1, dim=-1, largest=True, sorted=True)[1]
-        topk_ids_block = topk_ids_block[0, :, 0]  # `[T_block]`
+        topk_ids_block = ctc_probs_block[0].argmax(-1)  # `[T_block]`
         bs, xmax_block, vocab = ctc_probs_block.size()
 
         # skip all blank segments
@@ -213,7 +216,6 @@ class Streaming(object):
                     print('CTC (T:%d): %s' % (self._offset + (j + 1) * self._factor,
                                               self.idx2token([topk_ids_block[j].item()])))
 
-            # if not is_reset and (self._n_blanks * self._factor >= self.BLANK_THRESHOLD):# NOTE: select the leftmost blank offset
             if self._n_blanks * self._factor >= self.BLANK_THRESHOLD:  # NOTE: select the rightmost blank offset
                 self._bd_offset = j
                 is_reset = True

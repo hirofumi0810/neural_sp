@@ -107,9 +107,9 @@ class RNNEncoder(EncoderBase):
         chunk_size_right = str(chunk_size_right)
 
         # for latency-controlled
-        self.chunk_size_current = int(chunk_size_current.split('_')[0]) // n_stacks
-        self.chunk_size_right = int(chunk_size_right.split('_')[0]) // n_stacks
-        self.lc_bidir = self.chunk_size_current > 0 or self.chunk_size_right > 0 and self.bidirectional
+        self.N_c = int(chunk_size_current.split('_')[0]) // n_stacks
+        self.N_r = int(chunk_size_right.split('_')[0]) // n_stacks
+        self.lc_bidir = (self.N_c > 0 or self.N_r > 0) and self.bidirectional
         if self.lc_bidir:
             assert enc_type not in ['lstm', 'gru', 'conv_lstm', 'conv_gru']
             assert n_layers_sub2 == 0
@@ -150,7 +150,7 @@ class RNNEncoder(EncoderBase):
             self._odim = input_dim * n_splices * n_stacks
         self.cnn_lookahead = cnn_lookahead
         if not cnn_lookahead:
-            assert self.chunk_size_current > 0
+            assert self.N_c > 0
             assert self.lc_bidir
 
         if enc_type != 'conv':
@@ -217,22 +217,20 @@ class RNNEncoder(EncoderBase):
                 self._odim = last_proj_dim
 
         # calculate subsampling factor
-        self._factor = 1
-        if self.conv is not None:
-            self._factor *= self.conv.subsampling_factor
-        self._factor_sub1 = self._factor
-        if n_layers_sub1 > 0 and np.prod(subsamples[:n_layers_sub1 - 1]) > 1:
+        self.conv_factor = self.conv.subsampling_factor if self.conv is not None else 1
+        self._factor = self.conv_factor
+        self._factor_sub1 = self.conv_factor
+        self._factor_sub2 = self.conv_factor
+        if n_layers_sub1 > 1:
             self._factor_sub1 *= np.prod(subsamples[:n_layers_sub1 - 1])
-        self._factor_sub2 = self._factor
-        if n_layers_sub2 > 0 and np.prod(subsamples[:n_layers_sub2 - 1]) > 1:
+        if n_layers_sub2 > 1:
             self._factor_sub1 *= np.prod(subsamples[:n_layers_sub2 - 1])
-        if np.prod(subsamples) > 1:
-            self._factor *= np.prod(subsamples)
+        self._factor *= np.prod(subsamples)
         # NOTE: subsampling factor for frame stacking should not be included here
-        if self.chunk_size_current > 0:
-            assert self.chunk_size_current % self._factor == 0
-        if self.chunk_size_right > 0:
-            assert self.chunk_size_right % self._factor == 0
+        if self.N_c > 0:
+            assert self.N_c % self._factor == 0
+        if self.N_r > 0:
+            assert self.N_r % self._factor == 0
 
         self.reset_parameters(param_init)
 
@@ -329,7 +327,7 @@ class RNNEncoder(EncoderBase):
         xs = self.dropout_in(xs)
 
         bs, xmax, idim = xs.size()
-        N_c, N_r = self.chunk_size_current, self.chunk_size_right
+        N_c, N_r = self.N_c, self.N_r
 
         if self.lc_bidir and not self.cnn_lookahead:
             xs = chunkwise(xs, 0, N_c, 0)  # `[B * n_chunks, N_c, idim]`
@@ -345,8 +343,8 @@ class RNNEncoder(EncoderBase):
                 eouts['ys']['xlens'] = xlens
                 return eouts
             if self.lc_bidir:
-                N_c = N_c // self.conv.subsampling_factor
-                N_r = N_r // self.conv.subsampling_factor
+                N_c = N_c // self.conv_factor
+                N_r = N_r // self.conv_factor
 
         carry_over = self.rsp_prob > 0 and self.training and random.random() < self.rsp_prob
         carry_over = carry_over and (bs == (self.hx_fwd[0][0].size(0) if self.hx_fwd[0] is not None else 0))
@@ -356,7 +354,7 @@ class RNNEncoder(EncoderBase):
 
         if self.lc_bidir:
             # Flip the layer and time loop
-            if self.chunk_size_current <= 0:
+            if self.N_c <= 0:
                 xs, xlens, xs_sub1, xlens_sub1 = self._forward_full_context(
                     xs, xlens)
             else:
