@@ -1636,6 +1636,9 @@ class RNNDecoder(DecoderBase):
 
         self.n_frames += eouts.size(1)
         self.score.reset()
-        self.key_tail = eouts[:, -(self.score.w - 1):]
+        if eouts.size(1) < self.score.w - 1 and self.key_tail is not None:
+            self.key_tail = torch.cat([self.key_tail, eouts], dim=1)[:, -(self.score.w - 1):]
+        else:
+            self.key_tail = eouts[:, -(self.score.w - 1):]
 
         return end_hyps, hyps, hyps_nobd
