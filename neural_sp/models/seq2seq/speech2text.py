@@ -657,9 +657,9 @@ class Speech2Text(ModelBase):
                         # Segmentation strategy 2:
                         # If <eos> is emitted from the decoder (not CTC),
                         # the current block is segmented.
-                        if not is_reset:
+                        if (not is_reset) and (not streaming.safeguard_reset):
                             streaming._bd_offset = eout_block.size(1) - 1  # TODO: fix later
-                        is_reset = True
+                            is_reset = True
 
                     if len(best_hyp_id_prefix_viz) > 0:
                         n_frames = self.dec_fwd.ctc.n_frames if ctc_weight == 1 or self.ctc_weight == 1 else self.dec_fwd.n_frames
