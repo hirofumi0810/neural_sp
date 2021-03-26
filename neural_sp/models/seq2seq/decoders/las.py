@@ -1454,7 +1454,7 @@ class RNNDecoder(DecoderBase):
 
     def beam_search_block_sync(self, eouts, params, helper, idx2token,
                                hyps, hyps_nobd, lm, ctc_log_probs=None, speaker=None,
-                               ignore_eos=False):
+                               ignore_eos=False, dualhyp=True):
         assert eouts.size(0) == 1
         assert self.attn_type == 'mocha'
 
@@ -1594,13 +1594,19 @@ class RNNDecoder(DecoderBase):
                          'no_boundary': no_boundary})
 
             # Local pruning
-            new_hyps += hyps_nobd
-            new_hyps = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+            if not dualhyp:
+                new_hyps += hyps_nobd
+            new_hyps = sorted(new_hyps, key=lambda x: x['score'], reverse=True)
 
             # Remove complete hypotheses
             new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps, end_hyps)
-            hyps_nobd = [beam for beam in new_hyps if beam['no_boundary']]
-            hyps = [beam for beam in new_hyps if not beam['no_boundary']]
+
+            if dualhyp:
+                hyps = new_hyps[:]
+            else:
+                hyps_nobd = [beam for beam in new_hyps if beam['no_boundary']]
+                hyps = [beam for beam in new_hyps if not beam['no_boundary']]
+
             if is_finish:
                 break
 
