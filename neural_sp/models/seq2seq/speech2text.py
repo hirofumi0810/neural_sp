@@ -563,7 +563,7 @@ class Speech2Text(ModelBase):
         assert params.get('recog_block_sync')
         # assert params.get('recog_length_norm')
 
-        streaming = Streaming(xs[0], params, self.enc)
+        streaming = Streaming(xs[0], params, self.enc, idx2token)
         factor = self.enc.subsampling_factor
         block_size //= factor
         assert block_size >= 1, "block_size is too small."
@@ -573,7 +573,6 @@ class Speech2Text(ModelBase):
         hyps_nobd = []
         best_hyp_id_session = []
         is_reset = False
-        stdout = False
 
         helper = BeamSearch(params.get('recog_beam_width'),
                             self.eos,
@@ -618,22 +617,6 @@ class Speech2Text(ModelBase):
                 eout_block = torch.cat([eout_block_tail, eout_block], dim=1)
                 eout_block_tail = None
 
-            # CTC-based VAD
-            is_reset = False
-            if streaming.is_ctc_vad:
-                if self.ctc_weight_sub1 > 0:
-                    ctc_probs_block = self.dec_fwd_sub1.ctc.probs(eout_block_dict['ys_sub1']['xs'])
-                    # TODO: consider subsampling
-                else:
-                    ctc_probs_block = self.dec_fwd.ctc.probs(eout_block)
-                is_reset = streaming.ctc_vad(ctc_probs_block, stdout=stdout)
-
-            # Truncate the most right frames based on VAD
-            if is_reset and not is_last_block and streaming.bd_offset >= 0:
-                if is_transformer_enc and eout_block[:, streaming.bd_offset:].size(1) > 0:
-                    eout_block_tail = eout_block[:, streaming.bd_offset:]
-                eout_block = eout_block[:, :streaming.bd_offset]
-
             if eout_block.size(1) > 0:
                 streaming.cache_eout(eout_block)
 
@@ -656,6 +639,22 @@ class Speech2Text(ModelBase):
                 else:
                     raise NotImplementedError(self.dec_fwd)
 
+                # CTC-based reset point detection
+                is_reset = False
+                if streaming.enable_ctc_reset_point_detection:
+                    if self.ctc_weight_sub1 > 0:
+                        ctc_probs_block = self.dec_fwd_sub1.ctc.probs(eout_block_dict['ys_sub1']['xs'])
+                        # TODO: consider subsampling
+                    else:
+                        ctc_probs_block = self.dec_fwd.ctc.probs(eout_block)
+                    is_reset = streaming.ctc_reset_point_detection(ctc_probs_block)
+
+                # Truncate the most right frames based on VAD
+                if is_reset and not is_last_block and streaming.bd_offset >= 0:
+                    if is_transformer_enc and eout_block[:, streaming.bd_offset:].size(1) > 0:
+                        eout_block_tail = eout_block[:, streaming.bd_offset:]
+                    eout_block = eout_block[:, :streaming.bd_offset]
+
                 merged_hyps = sorted(end_hyps + hyps + hyps_nobd, key=lambda x: x['score'], reverse=True)
                 if len(merged_hyps) > 0:
                     best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
@@ -664,17 +663,16 @@ class Speech2Text(ModelBase):
                     if (len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos):
                         # reset beam if <eos> is generated from the best hypothesis
                         best_hyp_id_prefix = best_hyp_id_prefix[:-1]  # exclude <eos>
-                        # Segmentation strategy 2:
+                        # Condition 2:
                         # If <eos> is emitted from the decoder (not CTC),
                         # the current block is segmented.
                         if (not is_reset) and (not streaming.safeguard_reset):
-                            streaming._bd_offset = eout_block.size(1) - 1  # TODO: fix later
                             is_reset = True
 
                     if len(best_hyp_id_prefix_viz) > 0:
                         n_frames = self.dec_fwd.ctc.n_frames if ctc_weight == 1 or self.ctc_weight == 1 else self.dec_fwd.n_frames
-                        print('\rStreaming (T:%d [10ms], offset:%d [10ms], blank:%d [10ms]): %s' %
-                              (streaming.offset + eout_block.size(1) * factor,
+                        print('\rStreaming (T:%.3f [sec], offset:%d [frame], blank:%d [frame]): %s' %
+                              ((streaming.offset + eout_block.size(1) * factor) / 100,
                                n_frames * factor,
                                streaming.n_blanks * factor,
                                idx2token(best_hyp_id_prefix_viz)))
@@ -686,7 +684,7 @@ class Speech2Text(ModelBase):
                     best_hyp_id_session.extend(best_hyp_id_prefix)
 
                 # reset
-                streaming.reset(stdout=stdout)
+                streaming.reset()
                 hyps = None
                 hyps_nobd = []
 

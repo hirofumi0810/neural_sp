@@ -50,9 +50,9 @@ class Streaming(object):
             assert self.N_c % self._factor == 0
         # NOTE: these lengths are the ones before subsampling
 
-        # threshold for CTC-VAD
+        # threshold for CTC-based reset point detection
         self.blank_id = 0
-        self.is_ctc_vad = params.get('recog_ctc_vad')
+        self.enable_ctc_reset_point_detection = params.get('recog_ctc_vad')
         self.BLANK_THRESHOLD = params.get('recog_ctc_vad_blank_threshold')
         self.SPIKE_THRESHOLD = params.get('recog_ctc_vad_spike_threshold')
         self.MAX_N_ACCUM_FRAMES = params.get('recog_ctc_vad_n_accum_frames')
@@ -63,7 +63,6 @@ class Streaming(object):
         self._offset = 0  # global time offset in the session
         self._n_blanks = 0  # number of blank frames
         self._n_accum_frames = 0
-        self._bd_offset = -1  # boudnary offset in each block (AFTER subsampling)
 
         # for CNN frontend
         self.conv_context = encoder.conv.context_size if encoder.conv is not None else 0
@@ -88,10 +87,6 @@ class Streaming(object):
         return self._n_accum_frames
 
     @property
-    def bd_offset(self):
-        return self._bd_offset
-
-    @property
     def n_cache_block(self):
         return len(self._eout_blocks)
 
@@ -99,12 +94,10 @@ class Streaming(object):
     def safeguard_reset(self):
         return self._n_accum_frames < self.MAX_N_ACCUM_FRAMES
 
-    def reset(self, stdout=False):
+    def reset(self):
         self._eout_blocks = []
         self._n_blanks = 0
         self._n_accum_frames = 0
-        if stdout:
-            print('Reset')
 
     def cache_eout(self, eout_block):
         self._eout_blocks.append(eout_block)
@@ -114,7 +107,6 @@ class Streaming(object):
 
     def next_block(self):
         self._offset += self.N_c
-        self._bd_offset = -1  # reset
 
     def extract_feat(self):
         """Slice acoustic features.
@@ -164,8 +156,8 @@ class Streaming(object):
 
         return x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block
 
-    def ctc_vad(self, ctc_probs_block, stdout=False):
-        """Voice activity detection with CTC posterior probabilities.
+    def ctc_reset_point_detection(self, ctc_probs_block, stdout=False):
+        """Reset point detection with CTC posterior probabilities.
 
         Args:
             ctc_probs_block (FloatTensor): `[1, T_block, vocab]`
@@ -181,7 +173,7 @@ class Streaming(object):
 
         assert ctc_probs_block is not None
 
-        # Segmentation strategy 1:
+        # Condition 1:
         # If any segmentation points are not found in the current block,
         # encoder states will be carried over to the next block.
         # Otherwise, the current block is segmented at the point where
@@ -217,7 +209,6 @@ class Streaming(object):
                                               self.idx2token([topk_ids_block[j].item()])))
 
             if self._n_blanks * self._factor >= self.BLANK_THRESHOLD:  # NOTE: select the rightmost blank offset
-                self._bd_offset = j
                 is_reset = True
                 n_blanks_tmp = self._n_blanks
 
