@@ -167,8 +167,8 @@ def main():
     args.use_apex = args.train_dtype in ["O0", "O1", "O2", "O3"]
     amp, scaler = None, None
     if args.n_gpus >= 1:
-        model.cudnn_setting(deterministic=not (is_transformer or args.cudnn_benchmark),
-                            benchmark=not is_transformer and args.cudnn_benchmark)
+        model.cudnn_setting(deterministic=((not is_transformer) and (not args.cudnn_benchmark)) or args.cudnn_deterministic,
+                            benchmark=(not is_transformer) and args.cudnn_benchmark)
 
         # Mixed precision training setting
         if args.use_apex:
