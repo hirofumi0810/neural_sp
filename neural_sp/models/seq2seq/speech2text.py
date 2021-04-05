@@ -649,12 +649,6 @@ class Speech2Text(ModelBase):
                         ctc_probs_block = self.dec_fwd.ctc.probs(eout_block)
                     is_reset = streaming.ctc_reset_point_detection(ctc_probs_block)
 
-                # Truncate the most right frames based on VAD
-                if is_reset and not is_last_block and streaming.bd_offset >= 0:
-                    if is_transformer_enc and eout_block[:, streaming.bd_offset:].size(1) > 0:
-                        eout_block_tail = eout_block[:, streaming.bd_offset:]
-                    eout_block = eout_block[:, :streaming.bd_offset]
-
                 merged_hyps = sorted(end_hyps + hyps + hyps_nobd, key=lambda x: x['score'], reverse=True)
                 if len(merged_hyps) > 0:
                     best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
