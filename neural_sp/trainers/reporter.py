@@ -44,6 +44,7 @@ class Reporter:
             else:
                 id = wandb.util.generate_id()
                 args.wandb_id = id
+            self._wanbd_id = id
             wandb.init(project=args.corpus, name=os.path.basename(args.save_path),
                        id=id, allow_val_change=True)
             for k, v in args.items():
@@ -51,6 +52,8 @@ class Reporter:
                     continue
                 setattr(wandb.config, k, v)
             wandb.watch(model)
+        else:
+            self._wanbd_id = None
 
         self.obsv_train = {'loss': {}, 'acc': {}, 'ppl': {}}
         self.obsv_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
@@ -61,6 +64,10 @@ class Reporter:
         self._epoch = 0
         self.steps = []
         self.epochs = []
+
+    @property
+    def wandb_id(self):
+        return self._wanbd_id
 
     @property
     def n_steps(self):
