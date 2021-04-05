@@ -11,7 +11,9 @@ stage=0
 stop_stage=5
 gpu=
 benchmark=true
+deterministic=false
 stdout=false
+wandb_id=""
 
 #########################
 # ASR configuration
@@ -48,6 +50,12 @@ n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 train_set=train
 dev_set=dev
 test_set="test"
+
+use_wandb=false
+if [ ! -z ${wandb_id} ]; then
+    use_wandb=true
+    wandb login ${wandb_id}
+fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     echo ============================================================================
@@ -122,9 +130,11 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus timit \
+        --use_wandb ${use_wandb} \
         --config ${conf} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
+        --cudnn_deterministic ${deterministic} \
         --train_set ${data}/dataset/${train_set}.tsv \
         --dev_set ${data}/dataset/${dev_set}.tsv \
         --eval_sets ${data}/dataset/${test_set}.tsv \

@@ -11,8 +11,10 @@ stage=0
 stop_stage=5
 gpu=
 benchmark=true
+deterministic=false
 speed_perturb=false
 stdout=false
+cmd_coverage="coverage run -a"
 
 ### vocabulary
 unit=char      # word/wp/char/word_char
@@ -179,12 +181,13 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
 
     echo ${conf}
     echo ${conf2}
-    CUDA_VISIBLE_DEVICES=${gpu} coverage run -a ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${cmd_coverage} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus ci_test \
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
+        --cudnn_deterministic ${deterministic} \
         --train_set data/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --train_set_sub1 data/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
         --dev_set data/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \

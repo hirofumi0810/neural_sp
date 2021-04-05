@@ -11,8 +11,10 @@ stage=0
 stop_stage=5
 gpu=
 benchmark=true
+deterministic=false
 speed_perturb=false
 stdout=false
+wandb_id=""
 
 ### vocabulary
 unit=wp           # word/wp/word_char
@@ -102,6 +104,12 @@ if [ ${unit_sub2} = char ] || [ ${unit_sub2} = phone ]; then
 fi
 if [ ${unit_sub2} != wp ]; then
     wp_type_sub2=
+fi
+
+use_wandb=false
+if [ ! -z ${wandb_id} ]; then
+    use_wandb=true
+    wandb login ${wandb_id}
 fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
@@ -319,10 +327,12 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus swbd \
+        --use_wandb ${use_wandb} \
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
+        --cudnn_deterministic ${deterministic} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
         --train_set_sub2 ${data}/dataset/${train_set}_${unit_sub2}${wp_type_sub2}${vocab_sub2}.tsv \
