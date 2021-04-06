@@ -12,7 +12,6 @@ import os
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.args_common import add_args_common
 
-
 ENCODER_TYPES = ['blstm', 'lstm', 'bgru', 'gru',
                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
                  'transformer', 'conv_transformer', 'conv_uni_transformer',
@@ -212,37 +211,9 @@ def build_parser():
     parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
                         help='')
     # optimization
-    parser.add_argument('--batch_size', type=int, default=50,
-                        help='mini-batch size')
-    parser.add_argument('--optimizer', type=str, default='adam',
-                        choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov', 'noam'],
-                        help='type of optimizer')
-    parser.add_argument('--n_epochs', type=int, default=25,
-                        help='number of epochs to train the model')
-    parser.add_argument('--convert_to_sgd_epoch', type=int, default=100,
-                        help='epoch to convert to SGD fine-tuning')
-    parser.add_argument('--print_step', type=int, default=200,
-                        help='print log per this value')
     parser.add_argument('--metric', type=str, default='edit_distance',
                         choices=['edit_distance', 'loss', 'accuracy', 'ppl', 'bleu', 'mse'],
                         help='metric for evaluation during training')
-    parser.add_argument('--lr', type=float, default=1e-3,
-                        help='initial learning rate')
-    parser.add_argument('--lr_factor', type=float, default=10.0,
-                        help='factor of learning rate for Transformer')
-    parser.add_argument('--eps', type=float, default=1e-6,
-                        help='epsilon parameter for Adadelta optimizer')
-    parser.add_argument('--lr_decay_type', type=str, default='always',
-                        choices=['always', 'metric', 'warmup'],
-                        help='type of learning rate decay')
-    parser.add_argument('--lr_decay_start_epoch', type=int, default=10,
-                        help='epoch to start to decay learning rate')
-    parser.add_argument('--lr_decay_rate', type=float, default=0.9,
-                        help='decay rate of learning rate')
-    parser.add_argument('--lr_decay_patient_n_epochs', type=int, default=0,
-                        help='number of epochs to tolerate learning rate decay when validation performance is not improved')
-    parser.add_argument('--early_stop_patient_n_epochs', type=int, default=5,
-                        help='number of epochs to tolerate stopping training when validation performance is not improved')
     parser.add_argument('--sort_stop_epoch', type=int, default=10000,
                         help='epoch to stop soring utterances by length')
     parser.add_argument('--sort_short2long', type=strtobool, default=True,
@@ -252,17 +223,7 @@ def build_parser():
                         help='metric to sort utterances')
     parser.add_argument('--shuffle_bucket', type=strtobool, default=False,
                         help='gather the similar length of utterances and shuffle them')
-    parser.add_argument('--eval_start_epoch', type=int, default=1,
-                        help='first epoch to start evaluation')
-    parser.add_argument('--warmup_start_lr', type=float, default=0,
-                        help='initial learning rate for learning rate warm up')
-    parser.add_argument('--warmup_n_steps', type=int, default=0,
-                        help='number of steps to warm up learning rate')
-    parser.add_argument('--accum_grad_n_steps', type=int, default=1,
-                        help='total number of steps to accumulate gradients')
     # initialization
-    parser.add_argument('--param_init', type=float, default=0.1,
-                        help='')
     parser.add_argument('--asr_init', type=str, default=False, nargs='?',
                         help='pre-trained seq2seq model path')
     parser.add_argument('--asr_init_enc_only', type=strtobool, default=False,
@@ -270,8 +231,6 @@ def build_parser():
     parser.add_argument('--freeze_encoder', type=strtobool, default=False,
                         help='freeze the encoder parameter')
     # regularization
-    parser.add_argument('--clip_grad_norm', type=float, default=5.0,
-                        help='')
     parser.add_argument('--dropout_in', type=float, default=0.0,
                         help='dropout probability for the input')
     parser.add_argument('--dropout_enc', type=float, default=0.0,
@@ -282,10 +241,6 @@ def build_parser():
                         help='dropout probability for the embedding')
     parser.add_argument('--dropout_att', type=float, default=0.0,
                         help='dropout probability for the attention weights')
-    parser.add_argument('--weight_decay', type=float, default=0,
-                        help='weight decay parameter')
-    parser.add_argument('--lsm_prob', type=float, default=0.0,
-                        help='probability of label smoothing')
     parser.add_argument('--ctc_lsm_prob', type=float, default=0.0,
                         help='probability of label smoothing for CTC')
     # SpecAugment
@@ -361,22 +316,12 @@ def build_parser():
     parser.add_argument('--replace_sos', type=strtobool, default=False,
                         help='')
     # decoding parameters
-    parser.add_argument('--recog_stdout', type=strtobool, default=False,
-                        help='print to standard output during evaluation')
-    parser.add_argument('--recog_n_gpus', type=int, default=0,
-                        help='number of GPUs (0 indicates CPU)')
-    parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
-                        help='tsv file paths for the evaluation sets')
     parser.add_argument('--recog_word_alignments', type=str, default=[], nargs='+',
                         help='word alignment directory paths for the evaluation sets')
     parser.add_argument('--recog_first_n_utt', type=int, default=-1,
                         help='recognize the first N utterances for quick evaluation')
-    parser.add_argument('--recog_model', type=str, default=False, nargs='+',
-                        help='model path')
     parser.add_argument('--recog_model_bwd', type=str, default=False, nargs='?',
                         help='model path in the reverse direction')
-    parser.add_argument('--recog_dir', type=str, default=False,
-                        help='directory to save decoding results')
     parser.add_argument('--recog_unit', type=str, default=False, nargs='?',
                         choices=['word', 'wp', 'char', 'phone', 'word_char', 'char_space'],
                         help='')
@@ -385,8 +330,6 @@ def build_parser():
                         help='metric for evaluation')
     parser.add_argument('--recog_oracle', type=strtobool, default=False,
                         help='recognize by teacher-forcing')
-    parser.add_argument('--recog_batch_size', type=int, default=1,
-                        help='size of mini-batch in evaluation')
     parser.add_argument('--recog_beam_width', type=int, default=1,
                         help='size of beam')
     parser.add_argument('--recog_max_len_ratio', type=float, default=1.0,
