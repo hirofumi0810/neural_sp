@@ -381,8 +381,6 @@ def build_parser():
                         help='softmax smoothing (beta) for diverse hypothesis generation')
     parser.add_argument('--recog_wordlm', type=strtobool, default=False,
                         help='')
-    parser.add_argument('--recog_n_average', type=int, default=1,
-                        help='number of models for the model averaging of Transformer')
     parser.add_argument('--recog_longform_max_n_frames', type=int, default=0,
                         help='maximum input length for long-form evaluation')
     parser.add_argument('--recog_streaming', type=strtobool, default=False,
