@@ -11,7 +11,9 @@ stage=-1
 stop_stage=5
 gpu=
 benchmark=true
+deterministic=false
 stdout=false
+wandb_id=""
 
 ### vocabulary
 unit=char
@@ -39,9 +41,6 @@ lm_resume=
 ### path to save preproecssed data
 export data=/n/work2/inaguma/corpus/aishell1
 
-# Base url for downloads.
-data_url=www.openslr.org/resources/33
-
 . ./cmd.sh
 . ./path.sh
 . utils/parse_options.sh
@@ -61,11 +60,17 @@ train_set=train_sp
 dev_set=dev_sp
 test_set="test_sp"
 
+use_wandb=false
+if [ ! -z ${wandb_id} ]; then
+    use_wandb=true
+    wandb login ${wandb_id}
+fi
+
 if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
     echo "stage -1: Data Download"
     mkdir -p ${data}
-    local/download_and_untar.sh ${data} ${data_url} data_aishell
-    local/download_and_untar.sh ${data} ${data_url} resource_aishell
+    local/download_and_untar.sh ${data} "www.openslr.org/resources/33" data_aishell
+    local/download_and_untar.sh ${data} "www.openslr.org/resources/33" resource_aishell
 fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
@@ -146,6 +151,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
+        --cudnn_deterministic ${deterministic} \
         --train_set ${data}/dataset/${train_set}.tsv \
         --dev_set ${data}/dataset/${dev_set}.tsv \
         --eval_sets ${data}/dataset/${test_set}.tsv \
@@ -165,13 +171,14 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus aishell1 \
+        --use_wandb ${use_wandb} \
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
+        --cudnn_deterministic ${deterministic} \
         --train_set ${data}/dataset/${train_set}.tsv \
         --dev_set ${data}/dataset/${dev_set}.tsv \
-        --eval_sets ${data}/dataset/${test_set}.tsv \
         --unit ${unit} \
         --dict ${dict} \
         --model_save_dir ${model}/asr \

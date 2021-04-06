@@ -11,8 +11,10 @@ stage=0
 stop_stage=5
 gpu=
 benchmark=true
+deterministic=false
 speed_perturb=false
 stdout=false
+wandb_id=""
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char/phone
@@ -75,10 +77,6 @@ if [ ${n_gpus} != 1 ]; then
     export OMP_NUM_THREADS=${n_gpus}
 fi
 
-# Base url for downloads.
-data_url=www.openslr.org/resources/12
-lm_url=www.openslr.org/resources/11
-
 train_set=train_${datasize}
 dev_set=dev_other
 test_set="dev_clean dev_other test_clean test_other"
@@ -95,6 +93,12 @@ if [ ${unit} != wp ]; then
     wp_type=
 fi
 
+use_wandb=false
+if [ ! -z ${wandb_id} ]; then
+    use_wandb=true
+    wandb login ${wandb_id}
+fi
+
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
@@ -103,11 +107,11 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0
     # download data
     mkdir -p ${data}
     for part in dev-clean test-clean dev-other test-other train-clean-100 train-clean-360 train-other-500; do
-        local/download_and_untar.sh ${data_download_path} ${data_url} ${part} || exit 1;
+        local/download_and_untar.sh ${data_download_path} "www.openslr.org/resources/12" ${part} || exit 1;
     done
 
     # download the LM resources
-    local/download_lm.sh ${lm_url} ${data}/local/lm || exit 1;
+    local/download_lm.sh "www.openslr.org/resources/11" ${data}/local/lm || exit 1;
 
     # format the data as Kaldi data directories
     for part in dev-clean test-clean dev-other test-other train-clean-100 train-clean-360 train-other-500; do
@@ -316,10 +320,12 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus librispeech \
+        --use_wandb ${use_wandb} \
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
+        --cudnn_deterministic ${deterministic} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --unit ${unit} \

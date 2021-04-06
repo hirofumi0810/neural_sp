@@ -11,8 +11,10 @@ stage=0
 stop_stage=5
 gpu=
 benchmark=true
-speed_perturb=false
+deterministic=false
+speed_perturb=true
 stdout=false
+wandb_id=""
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char
@@ -95,6 +97,12 @@ if [ ${unit} = char ]; then
 fi
 if [ ${unit} != wp ]; then
     wp_type=
+fi
+
+use_wandb=false
+if [ ! -z ${wandb_id} ]; then
+    use_wandb=true
+    wandb login ${wandb_id}
 fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
@@ -242,6 +250,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
+        --cudnn_deterministic ${deterministic} \
         --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset_lm/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --unit ${unit} \
@@ -262,10 +271,12 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus wsj \
+        --use_wandb ${use_wandb} \
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
+        --cudnn_deterministic ${deterministic} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${data}/dataset/${test_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \

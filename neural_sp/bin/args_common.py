@@ -15,6 +15,8 @@ def add_args_common(parser):
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--cudnn_benchmark', type=strtobool, default=True,
                         help='use CuDNN benchmark mode')
+    parser.add_argument('--cudnn_deterministic', type=strtobool, default=False,
+                        help='use CuDNN deterministic mode')
     parser.add_argument("--train_dtype", default="float32",
                         choices=["float16", "float32", "float64", "O0", "O1", "O2", "O3"],
                         help="Data type for training")

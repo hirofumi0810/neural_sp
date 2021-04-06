@@ -11,8 +11,10 @@ stage=0
 stop_stage=5
 gpu=
 benchmark=true
+deterministic=false
 speed_perturb=false
 stdout=false
+wandb_id=""
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char/phone
@@ -101,6 +103,12 @@ if [ ${unit} != wp ]; then
     wp_type=
 fi
 
+use_wandb=false
+if [ ! -z ${wandb_id} ]; then
+    use_wandb=true
+    wandb login ${wandb_id}
+fi
+
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0_${datasize} ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
@@ -114,7 +122,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0
     done
 
     # Remove <sp> and POS tag, and lowercase
-    for x in train_${datasize} ${test_set}; do
+    for x in train_${datasize} eval1 eval2 eval3; do
         local/remove_pos.py ${data}/${x}/text | nkf -Z > ${data}/${x}/text.tmp
         mv ${data}/${x}/text.tmp ${data}/${x}/text
     done
@@ -257,6 +265,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
+        --cudnn_deterministic ${deterministic} \
         --train_set ${data}/dataset_lm/train_nodev_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset_lm/dev_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${lm_test_set} \
@@ -277,10 +286,12 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus csj \
+        --use_wandb ${use_wandb} \
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
+        --cudnn_deterministic ${deterministic} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${data}/dataset/eval1_${datasize}_${unit}${wp_type}${vocab}.tsv \

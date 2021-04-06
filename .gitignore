@@ -6,10 +6,13 @@ __pycache__
 .ftpconfig
 .nfs*
 .idea
+.pytest_cache
+.vscode
 *.done
 .coverage
 coverage.xml
 neural_sp.egg-info
+wandb
 
 # CI test
 example/ci_test/data
