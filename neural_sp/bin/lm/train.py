@@ -59,7 +59,6 @@ def main(gpu, ngpus_per_node, args):
                 setattr(args, k, v)
 
     # for multi-GPUs
-    batch_size = args.batch_size * args.n_gpus if args.distributed else args.batch_size
     accum_grad_n_steps = max(1, args.accum_grad_n_steps // max(1, args.n_gpus))
     if args.distributed:
         if args.dist_url == "env://" and args.rank == -1:
@@ -83,7 +82,7 @@ def main(gpu, ngpus_per_node, args):
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
-                        batch_size=batch_size,
+                        batch_size=args.batch_size,
                         bptt=args.bptt,
                         distributed=args.distributed,
                         min_n_tokens=args.min_n_tokens,
@@ -92,7 +91,7 @@ def main(gpu, ngpus_per_node, args):
                         serialize=args.serialize)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
-                      batch_size=batch_size,
+                      batch_size=args.batch_size,
                       bptt=args.bptt,
                       backward=args.backward,
                       serialize=args.serialize)
