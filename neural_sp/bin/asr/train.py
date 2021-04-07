@@ -73,7 +73,7 @@ def main(gpu, ngpus_per_node, args):
 
     # for multi-GPUs
     batch_size = args.batch_size * args.n_gpus if args.distributed else args.batch_size
-    accum_grad_n_steps = max(1, args.accum_grad_n_steps // args.n_gpus)
+    accum_grad_n_steps = max(1, args.accum_grad_n_steps // max(1, args.n_gpus))
     if args.distributed:
         if args.dist_url == "env://" and args.rank == -1:
             args.rank = int(os.environ["RANK"])
@@ -394,7 +394,8 @@ def main(gpu, ngpus_per_node, args):
     reporter.close()
 
     # Tear down the process group
-    dist.destroy_process_group()
+    if args.distributed:
+        dist.destroy_process_group()
 
     return args.save_path
 
