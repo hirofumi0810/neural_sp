@@ -16,9 +16,9 @@ from neural_sp.datasets.asr.dataset import CustomDataset
 def build_dataloader(args, tsv_path, batch_size, is_test=False,
                      sort_by='utt_id', short2long=False, sort_stop_epoch=1e10,
                      tsv_path_sub1=False, tsv_path_sub2=False,
-                     num_workers=0, pin_memory=False,
+                     num_workers=0, pin_memory=False, distributed=False,
                      first_n_utterances=-1, word_alignment_dir=None, ctc_alignment_dir=None,
-                     longform_max_n_frames=0):
+                     max_n_frames=1600, longform_max_n_frames=0):
 
     dataset = CustomDataset(corpus=args.corpus,
                             tsv_path=tsv_path,
@@ -35,7 +35,7 @@ def build_dataloader(args, tsv_path, batch_size, is_test=False,
                             wp_model_sub1=args.wp_model_sub1,
                             wp_model_sub2=args.wp_model_sub2,
                             min_n_frames=args.min_n_frames,
-                            max_n_frames=args.max_n_frames,
+                            max_n_frames=max_n_frames,
                             subsample_factor=args.subsample_factor,
                             subsample_factor_sub1=args.subsample_factor_sub1,
                             subsample_factor_sub2=args.subsample_factor_sub2,
@@ -50,7 +50,8 @@ def build_dataloader(args, tsv_path, batch_size, is_test=False,
                             word_alignment_dir=word_alignment_dir,
                             ctc_alignment_dir=ctc_alignment_dir)
 
-    batch_sampler = CustomBatchSampler(df=dataset.df,  # filtered
+    batch_sampler = CustomBatchSampler(dataset=dataset,
+                                       distributed=distributed,
                                        batch_size=batch_size,
                                        dynamic_batching=args.dynamic_batching,
                                        shuffle_bucket=args.shuffle_bucket and not is_test,

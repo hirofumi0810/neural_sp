@@ -6,26 +6,27 @@
 from pathlib import Path
 
 
-def mkdir_join(path, *dir_name):
+def mkdir_join(path, *dir_name, rank=0):
     """Concatenate root path and 1 or more paths, and make a new directory if the directory does not exist.
     Args:
         path (str): path to a directory
+        rank (int): rank of current process group
         dir_name (str): a directory name
     Returns:
         path to the new directory
     """
     p = Path(path)
-    if not p.is_dir():
+    if not p.is_dir() and rank == 0:
         p.mkdir()
     for i in range(len(dir_name)):
         # dir
         if i < len(dir_name) - 1:
             p = p.joinpath(dir_name[i])
-            if not p.is_dir():
+            if not p.is_dir() and rank == 0:
                 p.mkdir()
         elif '.' not in dir_name[i]:
             p = p.joinpath(dir_name[i])
-            if not p.is_dir():
+            if not p.is_dir() and rank == 0:
                 p.mkdir()
         # file
         else:

@@ -30,21 +30,43 @@ def set_batch_size(batch_size, min_xlen, min_ylen, dynamic_batching):
     return max(1, batch_size)
 
 
-def shuffle_bucketing(df, batch_size, dynamic_batching, seed=None):
+def sort_bucketing(df, batch_size, dynamic_batching, num_replicas=1):
+    """Bucket utterances in a sorted dataframe. This is also used for evaluation."""
     indices_buckets = []  # list of list
     offset = 0
+    indices_rest = list(df.index)
     while True:
         min_xlen = df[offset:offset + 1]['xlen'].values[0]
         min_ylen = df[offset:offset + 1]['ylen'].values[0]
-        _batch_size = set_batch_size(batch_size, min_xlen, min_ylen,
-                                     dynamic_batching)
+        _batch_size = set_batch_size(batch_size, min_xlen, min_ylen, dynamic_batching)
+        _batch_size = max(num_replicas, _batch_size)
+        # NOTE: ensure batch size>=1 for all replicas
         indices = list(df[offset:offset + _batch_size].index)
         indices_buckets.append(indices)
         offset += len(indices)
         if offset >= len(df):
             break
 
-    # shuffle buckets
+    return indices_buckets
+
+
+def shuffle_bucketing(df, batch_size, dynamic_batching, seed=None, num_replicas=1):
+    """Bucket utterances having a similar length and shuffle them for Transformer training."""
+    indices_buckets = []  # list of list
+    offset = 0
+    while True:
+        min_xlen = df[offset:offset + 1]['xlen'].values[0]
+        min_ylen = df[offset:offset + 1]['ylen'].values[0]
+        _batch_size = set_batch_size(batch_size, min_xlen, min_ylen, dynamic_batching)
+        _batch_size = max(num_replicas, _batch_size)
+        # NOTE: ensure batch size>=1 for all replicas
+        indices = list(df[offset:offset + _batch_size].index)
+        indices_buckets.append(indices)
+        offset += len(indices)
+        if offset >= len(df):
+            break
+
+    # shuffle buckets globally
     if seed is not None:
         random.seed(seed)
     random.shuffle(indices_buckets)
@@ -52,6 +74,7 @@ def shuffle_bucketing(df, batch_size, dynamic_batching, seed=None):
 
 
 def longform_bucketing(df, batch_size, max_n_frames):
+    """Bucket utterances for long-form evaluation."""
     assert batch_size == 1
     indices_buckets = []  # list of list
     offset = 0
@@ -61,8 +84,7 @@ def longform_bucketing(df, batch_size, max_n_frames):
     while True:
         xlen = df.loc[offset + _batch_size]['xlen']
         speaker = df.loc[offset + _batch_size]['speaker']
-        if (speaker == speaker_prev and (n_frames_total + xlen) > max_n_frames) or \
-                offset + _batch_size >= len(df) - 1:
+        if (n_frames_total + xlen > max_n_frames) or (offset + _batch_size >= len(df) - 1):
             indices = list(df[offset:offset + _batch_size + 1].index)
             indices_buckets.append(indices)
             offset += len(indices)
@@ -79,6 +101,7 @@ def longform_bucketing(df, batch_size, max_n_frames):
 
 
 def discourse_bucketing(df, batch_size):
+    """Bucket utterances by timestamp for discourse-aware training."""
     indices_buckets = []  # list of list
     session_groups = [(k, v) for k, v in df.groupby('n_utt_in_session').groups.items()]
     for n_utt, ids in session_groups:
