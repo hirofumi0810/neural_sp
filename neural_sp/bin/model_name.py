@@ -109,8 +109,8 @@ def set_asr_model_name(args):
         if args.bwd_weight > 0:
             dir_name += '_' + args.unit + 'bwd'
         for sub in ['sub1', 'sub2']:
-            if args.get('train_set_' + sub) is not None:
-                dir_name += '_' + args.get('unit_' + sub) + str(args.get('vocab_' + sub))
+            if args.get('train_set_' + sub, ''):
+                dir_name += '_' + args.get('unit_' + sub, '') + str(args.get('vocab_' + sub, 0))
                 if args.get('ctc_weight_' + sub, 0) > 0:
                     dir_name += 'ctc'
                 if args.get(sub + '_weight', 0) - args.get('ctc_weight_' + sub, 0) > 0:
@@ -122,9 +122,9 @@ def set_asr_model_name(args):
             dir_name += '_bwd' + str(args.bwd_weight)
         for sub in ['sub1', 'sub2']:
             if args.get(sub + '_weight', 0) > 0:
-                dir_name += '_' + args.get('unit_' + sub) + str(args.get('vocab_' + sub))
+                dir_name += '_' + args.get('unit_' + sub, '') + str(args.get('vocab_' + sub, 0))
                 if args.get('ctc_weight_' + sub, 0) > 0:
-                    dir_name += 'ctc%.1f' % args.get('ctc_weight_' + sub)
+                    dir_name += 'ctc%.1f' % args.get('ctc_weight_' + sub, 0)
                 if args.get(sub + '_weight', 0) - args.get('ctc_weight_' + sub, 0) > 0:
                     dir_name += 'fwd%.2f' % (args.total_weight - args.get(sub + '_weight',
                                                                           0) - args.get('ctc_weight_' + sub, 0))
@@ -212,4 +212,7 @@ def set_lm_name(args):
         dir_name += '_shuffle'
     if args.serialize:
         dir_name += '_serialize'
+
+    if args.n_gpus > 1:
+        dir_name += '_' + str(args.n_gpus) + 'GPU'
     return dir_name

@@ -24,20 +24,21 @@ green = '#82b74b'
 logger = logging.getLogger(__name__)
 
 
-class Reporter:
+class Reporter(object):
     """Report loss, accuracy etc. during training."""
 
-    def __init__(self, args, model, use_tensorboard=True):
+    def __init__(self, args, model, rank, use_tensorboard=True):
         self.save_path = args.save_path
+        self.rank = rank
 
         # tensorboard
-        if use_tensorboard:
+        if use_tensorboard and rank == 0:
             self.tf_writer = SummaryWriter(args.save_path)
         else:
             self.tf_writer = None
 
         # wandb
-        self.use_wandb = args.use_wandb
+        self.use_wandb = args.use_wandb and rank == 0
         if self.use_wandb:
             if args.resume and getattr(args, 'wandb_id', None) is not None:
                 id = args.wandb_id
@@ -153,14 +154,16 @@ class Reporter:
         if is_eval:
             self.steps.append(self._step)
             self.obsv_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}  # reset
-            # NOTE: don't reset in add() because of multiple tasks
+            # NOTE: don't reset in add_observation() because of multiple tasks
         else:
             self._log_wandb()
-            self._step += 1
+            self._step += 1  # count training step only
             # NOTE: different from the step counter in Noam Optimizer
 
     def epoch(self, metric=None, name='edit_distance'):
         self._epoch += 1
+        if self.rank > 0:
+            return
         if metric is None:
             return
         self.epochs.append(self._epoch)
@@ -185,6 +188,9 @@ class Reporter:
         plt.savefig(os.path.join(self.save_path, name + ".png"))
 
     def snapshot(self):
+        if self.rank > 0:
+            return
+
         # linestyles = ['solid', 'dashed', 'dotted', 'dashdotdotted']
         linestyles = ['-', '--', '-.', ':', ':', ':', ':', ':', ':', ':', ':', ':']
         for metric in self.obsv_train.keys():
@@ -223,4 +229,5 @@ class Reporter:
             plt.savefig(png_path)
 
     def close(self):
-        self.tf_writer.close()
+        if self.tf_writer is not None:
+            self.tf_writer.close()

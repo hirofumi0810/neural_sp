@@ -15,6 +15,8 @@ import shutil
 import sys
 import time
 import torch
+import torch.multiprocessing as mp
+import torch.distributed as dist
 from tqdm import tqdm
 
 from neural_sp.bin.args_lm import parse_args_train
@@ -27,9 +29,13 @@ from neural_sp.bin.train_utils import (
     set_save_path
 )
 from neural_sp.datasets.lm import Dataset
+from neural_sp.datasets.utils import count_vocab_size
 from neural_sp.evaluators.ppl import eval_ppl
-from neural_sp.models.data_parallel import CustomDataParallel
-from neural_sp.models.data_parallel import CPUWrapperLM
+from neural_sp.models.data_parallel import (
+    CustomDataParallel,
+    CustomDistributedDataParallel,
+    CPUWrapperLM
+)
 from neural_sp.models.lm.build import build_lm
 from neural_sp.trainers.lr_scheduler import LRScheduler
 from neural_sp.trainers.optimizer import set_optimizer
@@ -40,9 +46,7 @@ from neural_sp.utils import mkdir_join
 logger = logging.getLogger(__name__)
 
 
-def main():
-
-    args = parse_args_train(sys.argv[1:])
+def main(gpu, ngpus_per_node, args):
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
@@ -55,49 +59,49 @@ def main():
                 setattr(args, k, v)
 
     # for multi-GPUs
-    if args.n_gpus > 1:
-        batch_size = args.batch_size * args.n_gpus
-        accum_grad_n_steps = max(1, args.accum_grad_n_steps // args.n_gpus)
+    accum_grad_n_steps = max(1, args.accum_grad_n_steps // max(1, args.n_gpus))
+    if args.distributed:
+        if args.dist_url == "env://" and args.rank == -1:
+            args.rank = int(os.environ["RANK"])
+        if args.multiprocessing_distributed:
+            # For multiprocessing distributed training, rank needs to be the
+            # global rank among all the processes
+            args.rank = args.rank * ngpus_per_node + gpu
+        dist.init_process_group(backend=args.dist_backend,
+                                init_method=args.dist_url,
+                                world_size=args.world_size,
+                                rank=args.rank)
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+        print(f"hostname={os.uname()[1]}, LOCAL_RANK={gpu}, RANK={rank}, WORLD_SIZE={world_size}")
+        assert rank == args.rank
     else:
-        batch_size = args.batch_size
-        accum_grad_n_steps = args.accum_grad_n_steps
+        rank = 0
+        world_size = 1
 
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
-                        dict_path=args.dict,
-                        nlsyms=args.nlsyms,
-                        unit=args.unit,
-                        wp_model=args.wp_model,
-                        batch_size=batch_size,
-                        n_epochs=args.n_epochs,
-                        min_n_tokens=args.min_n_tokens,
+                        batch_size=args.batch_size,
                         bptt=args.bptt,
+                        distributed=args.distributed,
+                        min_n_tokens=args.min_n_tokens,
                         shuffle=args.shuffle,
                         backward=args.backward,
                         serialize=args.serialize)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
-                      dict_path=args.dict,
-                      nlsyms=args.nlsyms,
-                      unit=args.unit,
-                      wp_model=args.wp_model,
-                      batch_size=batch_size,
+                      batch_size=args.batch_size,
                       bptt=args.bptt,
                       backward=args.backward,
                       serialize=args.serialize)
     eval_sets = [Dataset(corpus=args.corpus,
                          tsv_path=s,
-                         dict_path=args.dict,
-                         nlsyms=args.nlsyms,
-                         unit=args.unit,
-                         wp_model=args.wp_model,
                          batch_size=1,
                          bptt=args.bptt,
                          backward=args.backward,
                          serialize=args.serialize) for s in args.eval_sets]
-
-    args.vocab = train_set.vocab
+    args.vocab = count_vocab_size(args.dict)
 
     # Set save path
     if args.resume:
@@ -107,10 +111,12 @@ def main():
         dir_name = set_lm_name(args)
         args.save_path = mkdir_join(args.model_save_dir, '_'.join(
             os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        if rank > 0:
+            time.sleep(1)
         args.save_path = set_save_path(args.save_path)  # avoid overwriting
 
     # Set logger
-    set_logger(os.path.join(args.save_path, 'train.log'), stdout=args.stdout)
+    set_logger(os.path.join(args.save_path, 'train.log'), args.stdout, rank)
 
     # Model setting
     model = build_lm(args, args.save_path)
@@ -181,8 +187,14 @@ def main():
                 amp.init()
                 if args.resume:
                     load_checkpoint(args.resume, amp=amp)
-        model.cuda()
-        model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
+
+        torch.cuda.set_device(gpu)
+        model.cuda(gpu)
+        if args.distributed:
+            args.workers = int((args.workers + ngpus_per_node - 1) / ngpus_per_node)
+            model = CustomDistributedDataParallel(model, device_ids=[gpu])
+        else:
+            model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
     else:
         model = CPUWrapperLM(model)
 
@@ -193,23 +205,22 @@ def main():
     setproctitle(args.job_name if args.job_name else dir_name)
 
     # Set reporter
-    reporter = Reporter(args, model)
+    reporter = Reporter(args, model, rank)
+    args.wandb_id = reporter.wandb_id
     if args.resume:
         n_steps = scheduler.n_steps * accum_grad_n_steps
         reporter.resume(n_steps, resume_epoch)
 
     # Save conf file as a yaml file
-    if not args.resume:
+    if rank == 0:
         save_config(args, os.path.join(args.save_path, 'conf.yml'))
         # NOTE: save after reporter for wandb ID
 
-    hidden = None
     start_time_train = time.time()
     for ep in range(resume_epoch, args.n_epochs):
-        for ys_train, is_new_epoch in train_set:
-            hidden = train(model, train_set, dev_set,
-                           scheduler, reporter, logger, args,
-                           accum_grad_n_steps, amp, scaler, hidden)
+        train_one_epoch(model, train_set, dev_set, rank, world_size,
+                        scheduler, reporter, logger, args,
+                        accum_grad_n_steps, amp, scaler)
 
         # Save checkpoint and validate model per epoch
         if reporter.n_epochs + 1 < args.eval_start_epoch:
@@ -217,8 +228,10 @@ def main():
             reporter.epoch()  # plot
 
             # Save model
-            scheduler.save_checkpoint(
-                model, args.save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
+            if rank == 0:
+                scheduler.save_checkpoint(
+                    model, args.save_path, amp=amp,
+                    remove_old=(not is_transformer) and args.remove_old_checkpoints)
         else:
             start_time_eval = time.time()
             # dev
@@ -234,8 +247,10 @@ def main():
 
             if scheduler.is_topk or is_transformer:
                 # Save model
-                scheduler.save_checkpoint(
-                    model, args.save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
+                if rank == 0:
+                    scheduler.save_checkpoint(
+                        model, args.save_path, amp=amp,
+                        remove_old=(not is_transformer) and args.remove_old_checkpoints)
 
                 # test
                 ppl_test_avg = 0.
@@ -268,19 +283,32 @@ def main():
     logger.info('Total time: %.2f hour' % ((time.time() - start_time_train) / 3600))
     reporter.close()
 
+    # Tear down the process group
+    if args.distributed:
+        dist.destroy_process_group()
+
     return args.save_path
 
 
-def train(model, train_set, dev_set, scheduler, reporter, logger, args,
-          accum_grad_n_steps, amp, scaler, hidden):
+def train_one_epoch(model, train_set, dev_set, rank, num_replicas,
+                    scheduler, reporter, logger, args,
+                    accum_grad_n_steps, amp, scaler):
     """Train model for one epoch."""
-    pbar_epoch = tqdm(total=len(train_set))
+    if rank == 0:
+        pbar_epoch = tqdm(total=len(train_set))
+    print_step = args.print_step // num_replicas
+
     _accum_n_steps = 0  # reset at every epoch
     start_time_step = time.time()
     start_time_epoch = time.time()
-    for ys_train, is_new_epoch in train_set:
-        # Compute loss in the training set
+    hidden = None  # reset per epoch
+
+    while True:
+        ys_train, is_new_epoch = train_set.next()
         _accum_n_steps += 1
+        num_samples = len(ys_train) * num_replicas  # total batch size
+
+        # Compute loss in the training set
         reporter.add_scalar('learning_rate', scheduler.lr)
         if _accum_n_steps == 1:
             loss_train = 0  # moving average over gradient accumulation
@@ -290,6 +318,8 @@ def train(model, train_set, dev_set, scheduler, reporter, logger, args,
         else:
             loss, hidden, observation = model(ys_train, state=hidden)
         reporter.add_observation(observation)
+        if args.distributed:
+            loss *= num_replicas
         loss /= accum_grad_n_steps
 
         if args.use_apex:
@@ -323,11 +353,14 @@ def train(model, train_set, dev_set, scheduler, reporter, logger, args,
 
         hidden = model.module.repackage_state(hidden)
 
-        pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
+        if rank == 0:
+            pbar_epoch.update(num_samples * (len(ys_train[0]) - 1))
+            if is_new_epoch:
+                pbar_epoch.update(num_samples)  # for the last <eos>
 
-        if reporter.n_steps > 0 and reporter.n_steps % args.print_step == 0:
+        if reporter.n_steps > 0 and reporter.n_steps % print_step == 0:
             # Compute loss in the dev set
-            ys_dev = iter(dev_set).next(bptt=args.bptt)[0]
+            ys_dev = iter(dev_set).next()[0]
             loss, _, observation = model(ys_dev, state=None, is_eval=True)
             reporter.add_observation(observation, is_eval=True)
             loss_dev = loss.item()
@@ -335,16 +368,16 @@ def train(model, train_set, dev_set, scheduler, reporter, logger, args,
             reporter.add_scalar('dev/total_loss', loss_dev)
             reporter.step(is_eval=True)
 
-            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
-                        (reporter.n_steps, reporter.n_epochs + train_set.epoch_detail,
+            logger.info("rank:%d, step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
+                        (rank, reporter.n_steps, reporter.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
-                         scheduler.lr, ys_train.shape[0], (time.time() - start_time_step) / 60))
+                         scheduler.lr, num_samples, (time.time() - start_time_step) / 60))
             start_time_step = time.time()
 
         reporter.step()
 
         # Save figures of loss and accuracy
-        if reporter.n_steps > 0 and reporter.n_steps % (args.print_step * 10) == 0:
+        if rank == 0 and reporter.n_steps > 0 and reporter.n_steps % (print_step * 10) == 0:
             reporter.snapshot()
             model.module.plot_attention()
 
@@ -353,13 +386,29 @@ def train(model, train_set, dev_set, scheduler, reporter, logger, args,
 
     logger.info('========== EPOCH:%d (%.2f min) ==========' %
                 (reporter.n_epochs + 1, (time.time() - start_time_epoch) / 60))
-    pbar_epoch.close()
-
-    return hidden
+    if rank == 0:
+        pbar_epoch.close()
 
 
 if __name__ == '__main__':
-    # Setting for profiling
-    pr = cProfile.Profile()
-    save_path = pr.runcall(main)
-    pr.dump_stats(os.path.join(save_path, 'train.profile'))
+    args = parse_args_train(sys.argv[1:])
+
+    if args.n_gpus == 1:
+        args.multiprocessing_distributed = False
+
+    if args.dist_url == "env://" and args.world_size == -1:
+        args.world_size = int(os.environ["WORLD_SIZE"])
+
+    args.distributed = args.world_size > 1 or args.multiprocessing_distributed
+
+    ngpus_per_node = torch.cuda.device_count()
+    if args.multiprocessing_distributed:
+        # Since we have ngpus_per_node processes per node, the total world_size
+        # needs to be adjusted accordingly
+        args.world_size = ngpus_per_node * args.world_size
+        # Use torch.multiprocessing.spawn to launch distributed processes: the
+        # main process function
+        mp.spawn(main, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
+    else:
+        # Simply call main function
+        main(0, ngpus_per_node, args)

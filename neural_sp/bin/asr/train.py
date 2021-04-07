@@ -17,6 +17,8 @@ import shutil
 import sys
 import time
 import torch
+import torch.multiprocessing as mp
+import torch.distributed as dist
 from tqdm import tqdm
 
 from neural_sp.bin.args_asr import parse_args_train
@@ -39,6 +41,7 @@ from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
 from neural_sp.models.data_parallel import (
     CustomDataParallel,
+    CustomDistributedDataParallel,
     CPUWrapperASR
 )
 from neural_sp.models.lm.build import build_lm
@@ -48,13 +51,10 @@ from neural_sp.trainers.optimizer import set_optimizer
 from neural_sp.trainers.reporter import Reporter
 from neural_sp.utils import mkdir_join
 
-
 logger = logging.getLogger(__name__)
 
 
-def main():
-
-    args = parse_args_train(sys.argv[1:])
+def main(gpu, ngpus_per_node, args):
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
@@ -72,12 +72,26 @@ def main():
     args = compute_subsampling_factor(args)
 
     # for multi-GPUs
-    if args.n_gpus > 1:
-        batch_size = args.batch_size * args.n_gpus
-        accum_grad_n_steps = max(1, args.accum_grad_n_steps // args.n_gpus)
+    batch_size = args.batch_size * args.n_gpus if args.distributed else args.batch_size
+    accum_grad_n_steps = max(1, args.accum_grad_n_steps // max(1, args.n_gpus))
+    if args.distributed:
+        if args.dist_url == "env://" and args.rank == -1:
+            args.rank = int(os.environ["RANK"])
+        if args.multiprocessing_distributed:
+            # For multiprocessing distributed training, rank needs to be the
+            # global rank among all the processes
+            args.rank = args.rank * ngpus_per_node + gpu
+        dist.init_process_group(backend=args.dist_backend,
+                                init_method=args.dist_url,
+                                world_size=args.world_size,
+                                rank=args.rank)
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+        print(f"hostname={os.uname()[1]}, LOCAL_RANK={gpu}, RANK={rank}, WORLD_SIZE={world_size}")
+        assert rank == args.rank
     else:
-        batch_size = args.batch_size
-        accum_grad_n_steps = args.accum_grad_n_steps
+        rank = 0
+        world_size = 1
 
     # Load dataset
     train_set = build_dataloader(args=args,
@@ -85,20 +99,21 @@ def main():
                                  tsv_path_sub1=args.train_set_sub1,
                                  tsv_path_sub2=args.train_set_sub2,
                                  batch_size=batch_size,
+                                 max_n_frames=args.max_n_frames,
                                  sort_by=args.sort_by,
                                  short2long=args.sort_short2long,
                                  sort_stop_epoch=args.sort_stop_epoch,
-                                 num_workers=args.n_gpus,
-                                 pin_memory=False,
+                                 num_workers=args.workers if not args.distributed else 0,  # TODO
+                                 pin_memory=False,  # TODO
+                                 distributed=args.distributed,
                                  word_alignment_dir=args.train_word_alignment,
                                  ctc_alignment_dir=args.train_ctc_alignment)
     dev_set = build_dataloader(args=args,
                                tsv_path=args.dev_set,
                                tsv_path_sub1=args.dev_set_sub1,
                                tsv_path_sub2=args.dev_set_sub2,
-                               batch_size=1 if 'transducer' in args.dec_type else batch_size,
-                               num_workers=args.n_gpus,
-                               pin_memory=False,
+                               batch_size=1 if 'transducer' in args.dec_type else args.batch_size,
+                               max_n_frames=1600,
                                word_alignment_dir=args.dev_word_alignment,
                                ctc_alignment_dir=args.dev_ctc_alignment)
     eval_sets = [build_dataloader(args=args,
@@ -123,10 +138,12 @@ def main():
         else:
             args.save_path = mkdir_join(args.model_save_dir, '_'.join(
                 os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        if rank > 0:
+            time.sleep(1)
         args.save_path = set_save_path(args.save_path)  # avoid overwriting
 
     # Set logger
-    set_logger(os.path.join(args.save_path, 'train.log'), stdout=args.stdout)
+    set_logger(os.path.join(args.save_path, 'train.log'), args.stdout, rank)
 
     # Load a LM conf file for LM fusion & LM initialization
     if not args.resume and args.external_lm:
@@ -257,8 +274,13 @@ def main():
                 if args.resume:
                     load_checkpoint(args.resume, amp=amp)
 
-        model.cuda()
-        model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
+        torch.cuda.set_device(gpu)
+        model.cuda(gpu)
+        if args.distributed:
+            args.workers = int((args.workers + ngpus_per_node - 1) / ngpus_per_node)
+            model = CustomDistributedDataParallel(model, device_ids=[gpu])
+        else:
+            model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
 
         if teacher is not None:
             teacher.cuda()
@@ -274,14 +296,14 @@ def main():
     setproctitle(args.job_name if args.job_name else dir_name)
 
     # Set reporter
-    reporter = Reporter(args, model)
+    reporter = Reporter(args, model, rank)
     args.wandb_id = reporter.wandb_id
     if args.resume:
         n_steps = scheduler.n_steps * accum_grad_n_steps
         reporter.resume(n_steps, resume_epoch)
 
     # Save conf file as a yaml file
-    if not args.resume:
+    if rank == 0:
         save_config(args, os.path.join(args.save_path, 'conf.yml'))
         if args.external_lm:
             save_config(args.lm_conf, os.path.join(args.save_path, 'conf_lm.yml'))
@@ -315,9 +337,9 @@ def main():
 
     start_time_train = time.time()
     for ep in range(resume_epoch, args.n_epochs):
-        train(model, train_set, dev_set, eval_sets,
-              scheduler, reporter, logger, args,
-              tasks, accum_grad_n_steps, amp, scaler, teacher, teacher_lm)
+        train_one_epoch(model, train_set, dev_set, eval_sets, rank, world_size,
+                        scheduler, reporter, logger, args,
+                        tasks, accum_grad_n_steps, amp, scaler, teacher, teacher_lm)
 
         # Save checkpoint and validate model per epoch
         if reporter.n_epochs + 1 < args.eval_start_epoch:
@@ -325,8 +347,10 @@ def main():
             reporter.epoch()  # plot
 
             # Save model
-            scheduler.save_checkpoint(
-                model, args.save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
+            if rank == 0:
+                scheduler.save_checkpoint(
+                    model, args.save_path, amp=amp,
+                    remove_old=(not is_transformer) and args.remove_old_checkpoints)
         else:
             start_time_eval = time.time()
             # dev
@@ -335,10 +359,13 @@ def main():
             reporter.epoch(metric_dev, name=args.metric)  # plot
             reporter.add_scalar('dev/' + args.metric, metric_dev)
 
+            # dist.barrier() # TODO:
             if scheduler.is_topk or is_transformer:
                 # Save model
-                scheduler.save_checkpoint(
-                    model, args.save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
+                if rank == 0:
+                    scheduler.save_checkpoint(
+                        model, args.save_path, amp=amp,
+                        remove_old=(not is_transformer) and args.remove_old_checkpoints)
 
                 # test
                 if scheduler.is_topk:
@@ -366,30 +393,38 @@ def main():
     logger.info('Total time: %.2f hour' % ((time.time() - start_time_train) / 3600))
     reporter.close()
 
+    # Tear down the process group
+    if args.distributed:
+        dist.destroy_process_group()
+
     return args.save_path
 
 
-def train(model, train_set, dev_set, eval_sets,
-          scheduler, reporter, logger, args,
-          tasks, accum_grad_n_steps, amp, scaler, teacher, teacher_lm):
+def train_one_epoch(model, train_set, dev_set, eval_sets, rank, num_replicas,
+                    scheduler, reporter, logger, args,
+                    tasks, accum_grad_n_steps, amp, scaler, teacher, teacher_lm):
     """Train model for one epoch."""
-    pbar_epoch = tqdm(total=len(train_set))
+    if rank == 0:
+        pbar_epoch = tqdm(total=len(train_set))
+    print_step = args.print_step // num_replicas
+
     session_prev = None
     _accum_n_steps = 0  # reset at every epoch
     epoch_detail_prev = train_set.epoch_detail
     start_time_step = time.time()
     start_time_epoch = time.time()
     n_rest = len(train_set)
+
     for batch_train in train_set:
-        # Compute loss in the training set
         if args.discourse_aware and batch_train['sessions'][0] != session_prev:
             model.module.reset_session()
         session_prev = batch_train['sessions'][0]
         _accum_n_steps += 1
-        n_rest -= len(batch_train['utt_ids'])
+        num_samples = len(batch_train['utt_ids']) * num_replicas
+        n_rest -= num_samples
         is_new_epoch = (n_rest == 0)
 
-        # Change mini-batch depending on task
+        # Compute loss in the training set
         reporter.add_scalar('learning_rate', scheduler.lr)
         if _accum_n_steps == 1:
             loss_train = 0  # moving average over gradient accumulation
@@ -402,6 +437,8 @@ def train(model, train_set, dev_set, eval_sets,
                 loss, observation = model(batch_train, task=task,
                                           teacher=teacher, teacher_lm=teacher_lm)
             reporter.add_observation(observation)
+            if args.distributed:
+                loss *= num_replicas
             loss /= accum_grad_n_steps
 
             if args.use_apex:
@@ -433,9 +470,10 @@ def train(model, train_set, dev_set, eval_sets,
                 reporter.add_scalar('train/total_loss', loss_train)
                 # NOTE: parameters are forcibly updated at the end of every epoch
 
-        pbar_epoch.update(len(batch_train['utt_ids']))
+        if rank == 0:
+            pbar_epoch.update(num_samples)
 
-        if reporter.n_steps > 0 and reporter.n_steps % args.print_step == 0:
+        if reporter.n_steps > 0 and reporter.n_steps % print_step == 0:
             # Compute loss in the dev set
             batch_dev = next(iter(dev_set))
             loss, observation = model(batch_dev, task='all', is_eval=True)
@@ -451,17 +489,16 @@ def train(model, train_set, dev_set, eval_sets,
             elif args.input_type == 'text':
                 xlen = max(len(x) for x in batch_train['ys'])
                 ylen = max(len(y) for y in batch_train['ys_sub1'])
-            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.7f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
-                        (reporter.n_steps, reporter.n_epochs + train_set.epoch_detail,
-                         loss_train, loss_dev,
-                         scheduler.lr, len(batch_train['utt_ids']),
+            logger.info("rank:%d, step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.7f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
+                        (rank, reporter.n_steps, reporter.n_epochs + train_set.epoch_detail,
+                         loss_train, loss_dev, scheduler.lr, num_samples,
                          xlen, ylen, (time.time() - start_time_step) / 60))
             start_time_step = time.time()
 
         reporter.step()
 
         # Save figures of loss and accuracy
-        if reporter.n_steps > 0 and reporter.n_steps % (args.print_step * 10) == 0:
+        if rank == 0 and reporter.n_steps > 0 and reporter.n_steps % (print_step * 10) == 0:
             reporter.snapshot()
             model.module.plot_attention()
             model.module.plot_ctc()
@@ -474,9 +511,10 @@ def train(model, train_set, dev_set, eval_sets,
                 metric_dev = validate([model.module], dev_set, args, sub_epoch, logger)
                 reporter.epoch(metric_dev, name=args.metric)  # plot
                 # Save model
-                scheduler.save_checkpoint(
-                    model, args.save_path, remove_old=False, amp=amp,
-                    epoch_detail=sub_epoch)
+                if rank == 0:
+                    scheduler.save_checkpoint(
+                        model, args.save_path, remove_old=False, amp=amp,
+                        epoch_detail=sub_epoch)
                 # test
                 for eval_set in eval_sets:
                     validate([model.module], eval_set, args, sub_epoch, logger)
@@ -485,23 +523,24 @@ def train(model, train_set, dev_set, eval_sets,
     train_set.reset(is_new_epoch=True)
     logger.info('========== EPOCH:%d (%.2f min) ==========' %
                 (reporter.n_epochs + 1, (time.time() - start_time_epoch) / 60))
-    pbar_epoch.close()
+    if rank == 0:
+        pbar_epoch.close()
 
 
 def validate(models, dataloader, args, epoch, logger):
     """Validate performance per epoch."""
     if args.metric == 'edit_distance':
         if args.unit in ['word', 'word_char']:
-            metric = eval_word(models, dataloader, args, epoch=epoch)[0]
+            metric = eval_word(models, dataloader, args, epoch, args.rank)[0]
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
 
         elif args.unit == 'wp':
-            metric, cer = eval_wordpiece(models, dataloader, args, epoch=epoch)
+            metric, cer = eval_wordpiece(models, dataloader, args, epoch, args.rank)
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
             logger.info('CER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, cer))
 
         elif 'char' in args.unit:
-            wer, cer = eval_char(models, dataloader, args, epoch=epoch)
+            wer, cer = eval_char(models, dataloader, args, epoch, args.rank)
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, wer))
             logger.info('CER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, cer))
             if dataloader.corpus in ['aishell1']:
@@ -510,23 +549,23 @@ def validate(models, dataloader, args, epoch, logger):
                 metric = wer
 
         elif 'phone' in args.unit:
-            metric = eval_phone(models, dataloader, args, epoch=epoch)
+            metric = eval_phone(models, dataloader, args, epoch, args.rank)
             logger.info('PER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'ppl':
-        metric = eval_ppl(models, dataloader, batch_size=args.batch_size)[0]
+        metric = eval_ppl(models, dataloader, args.batch_size)[0]
         logger.info('PPL (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'loss':
-        metric = eval_ppl(models, dataloader, batch_size=args.batch_size)[1]
+        metric = eval_ppl(models, dataloader, args.batch_size)[1]
         logger.info('Loss (%s, ep:%d): %.5f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'accuracy':
-        metric = eval_accuracy(models, dataloader, batch_size=args.batch_size)
+        metric = eval_accuracy(models, dataloader, args.batch_size)
         logger.info('Accuracy (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'bleu':
-        metric = eval_wordpiece_bleu(models, dataloader, args, epoch=epoch)
+        metric = eval_wordpiece_bleu(models, dataloader, args, epoch, args.rank)
         logger.info('BLEU (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     else:
@@ -536,7 +575,24 @@ def validate(models, dataloader, args, epoch, logger):
 
 
 if __name__ == '__main__':
-    # Setting for profiling
-    pr = cProfile.Profile()
-    save_path = pr.runcall(main)
-    pr.dump_stats(os.path.join(save_path, 'train.profile'))
+    args = parse_args_train(sys.argv[1:])
+
+    if args.n_gpus == 1:
+        args.multiprocessing_distributed = False
+
+    if args.dist_url == "env://" and args.world_size == -1:
+        args.world_size = int(os.environ["WORLD_SIZE"])
+
+    args.distributed = args.world_size > 1 or args.multiprocessing_distributed
+
+    ngpus_per_node = torch.cuda.device_count()
+    if args.multiprocessing_distributed:
+        # Since we have ngpus_per_node processes per node, the total world_size
+        # needs to be adjusted accordingly
+        args.world_size = ngpus_per_node * args.world_size
+        # Use torch.multiprocessing.spawn to launch distributed processes: the
+        # main process function
+        mp.spawn(main, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
+    else:
+        # Simply call main function
+        main(0, ngpus_per_node, args)

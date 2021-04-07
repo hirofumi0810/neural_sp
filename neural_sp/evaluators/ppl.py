@@ -1,7 +1,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Evaluate a LM by perplexity."""
+"""Evaluate LM by perplexity."""
 
 import logging
 import numpy as np
@@ -47,18 +47,18 @@ def eval_ppl(models, dataloader, batch_size=1, bptt=None, n_caches=0,
     is_lm = check_lm(models[0])
     total_loss = 0
     n_tokens = 0
-    hidden = None  # for RNNLM
-
-    # Reset data counter
-    dataloader.reset()
 
     if progressbar:
         pbar = tqdm(total=len(dataloader))
 
     if is_lm:
+        # Reset data counter
+        dataloader.reset(batch_size, bptt)
+
+        hidden = None  # for RNNLM
         while True:
-            ys, is_new_epoch = dataloader.next(batch_size, bptt)
-            bs, time = ys.shape[:2]
+            ys, is_new_epoch = dataloader.next()
+            bs, time = ys.shape
             if n_caches > 0:
                 assert isinstance(models[0], RNNLM)
                 # NOTE: cache is not supported for GatedConvLM/TransformerLM now
@@ -76,10 +76,15 @@ def eval_ppl(models, dataloader, batch_size=1, bptt=None, n_caches=0,
 
                 if progressbar:
                     pbar.update(bs * (time - 1))
+                    if is_new_epoch:
+                        pbar.update(bs)  # for the last <eos>
 
             if is_new_epoch:
                 break
     else:
+        # Reset data counter
+        dataloader.reset()
+
         for batch in dataloader:
             bs = len(batch['ys'])
             loss, _ = models[0](batch, task='all', is_eval=True)

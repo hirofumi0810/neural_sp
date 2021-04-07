@@ -223,8 +223,8 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
+        --dist-url 'tcp://127.0.0.1:1623' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 \
         --corpus tedlium2 \
-        --use_wandb ${use_wandb} \
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \

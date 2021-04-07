@@ -166,7 +166,7 @@ def main():
             if args.recog_unit in ['word', 'word_char']:
                 wer, cer, _ = eval_word(ensemble_models, dataloader, args,
                                         epoch=epoch - 1,
-                                        recog_dir=args.recog_dir,
+                                        save_dir=args.recog_dir,
                                         progressbar=True,
                                         fine_grained=True,
                                         oracle=True)
@@ -175,9 +175,10 @@ def main():
             elif args.recog_unit == 'wp':
                 wer, cer = eval_wordpiece(ensemble_models, dataloader, args,
                                           epoch=epoch - 1,
-                                          recog_dir=args.recog_dir,
+                                          save_dir=args.recog_dir,
                                           streaming=args.recog_streaming,
                                           progressbar=True,
+                                          edit_distance=args.recog_longform_max_n_frames == 0,
                                           fine_grained=True,
                                           oracle=True)
                 wer_avg += wer
@@ -185,7 +186,7 @@ def main():
             elif 'char' in args.recog_unit:
                 wer, cer = eval_char(ensemble_models, dataloader, args,
                                      epoch=epoch - 1,
-                                     recog_dir=args.recog_dir,
+                                     save_dir=args.recog_dir,
                                      progressbar=True,
                                      task_idx=0,
                                      fine_grained=True,
@@ -196,7 +197,7 @@ def main():
             elif 'phone' in args.recog_unit:
                 per = eval_phone(ensemble_models, dataloader, args,
                                  epoch=epoch - 1,
-                                 recog_dir=args.recog_dir,
+                                 save_dir=args.recog_dir,
                                  progressbar=True,
                                  fine_grained=True,
                                  oracle=True)
@@ -212,7 +213,7 @@ def main():
         elif args.recog_metric == 'bleu':
             bleu = eval_wordpiece_bleu(ensemble_models, dataloader, args,
                                        epoch=epoch - 1,
-                                       recog_dir=args.recog_dir,
+                                       save_dir=args.recog_dir,
                                        streaming=args.recog_streaming,
                                        progressbar=True,
                                        fine_grained=True,

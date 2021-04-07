@@ -242,10 +242,6 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     touch ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
-# lexicon=${data}/local/dict_nosp/lexicon.txt
-# map2phone.py --text ${data}/dataset_lm/text --lexicon ${lexicon} --unk SPN > ${data}/dataset_lm/text.phone
-# exit 1
-
 # sub1
 dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.txt
 wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_sub1}
@@ -292,6 +288,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
+        --dist-url 'tcp://127.0.0.1:1623' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 \
         --corpus librispeech \
         --use_wandb ${use_wandb} \
         --config ${conf} \
