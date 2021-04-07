@@ -307,6 +307,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
                  ${data}/dataset_lm/${test_set}_ch_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv"
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
+        --dist-url 'tcp://127.0.0.1:1623' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 \
         --corpus swbd \
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
@@ -332,6 +333,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
+        --dist-url 'tcp://127.0.0.1:1623' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 \
         --corpus swbd \
         --use_wandb ${use_wandb} \
         --config ${conf} \
