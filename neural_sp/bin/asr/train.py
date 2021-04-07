@@ -140,7 +140,7 @@ def main(gpu, ngpus_per_node, args):
                 os.path.basename(args.train_set).split('.')[:-1]), dir_name)
         if rank > 0:
             time.sleep(1)
-        args.save_path = set_save_path(args.save_path, rank)  # avoid overwriting
+        args.save_path = set_save_path(args.save_path)  # avoid overwriting
 
     # Set logger
     set_logger(os.path.join(args.save_path, 'train.log'), args.stdout, rank)

@@ -104,12 +104,11 @@ def set_logger(save_path, stdout=False, rank=0):
                         filename=save_path if not stdout else None)
 
 
-def set_save_path(save_path, rank=0):
+def set_save_path(save_path):
     """Change directory name to avoid name overlapping.
 
     Args:
         save_path (str): path to save model
-        rank (int): rank of current process group
     Returns:
         save_path_new (str): new path to save model
 
@@ -124,8 +123,8 @@ def set_save_path(save_path, rank=0):
             save_path_new = save_path + '_' + str(model_idx)
         else:
             break
-    if not os.path.isdir(save_path_new) and rank == 0:
-        os.mkdir(save_path_new)  # make directory at rank:0 only
+    if not os.path.isdir(save_path_new):
+        os.mkdir(save_path_new)
     return save_path_new
 
 
