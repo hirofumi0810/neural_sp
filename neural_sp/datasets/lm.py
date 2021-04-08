@@ -93,6 +93,8 @@ class Dataset(object):
         self.concat_ids = self.concat_utterances(self.df)
 
     def concat_utterances(self, df):
+        batch_size = self.batch_size_tmp if self.batch_size_tmp is not None else self.batch_size
+
         indices = list(df.index)
         if self.backward:
             indices = indices[::-1]
@@ -105,17 +107,17 @@ class Dataset(object):
 
         # Reshape
         n_utts_org = len(concat_ids)
-        n_utts = len(concat_ids) // (self.batch_size * self.num_replicas) * self.batch_size * self.num_replicas
+        n_utts = len(concat_ids) // (batch_size * self.num_replicas) * batch_size * self.num_replicas
         concat_ids = concat_ids[:n_utts]
-        logger.info(f"Removed {n_utts_org - len(concat_ids)} tokens / {n_utts_org} tokens")
-        concat_ids = np.array(concat_ids).reshape((self.num_replicas, self.batch_size, -1))
+        logger.debug(f"Removed {n_utts_org - len(concat_ids)} tokens / {n_utts_org} tokens")
+        concat_ids = np.array(concat_ids).reshape((self.num_replicas, batch_size, -1))
 
         return concat_ids
 
     @property
     def epoch_detail(self):
         """Percentage of the current epoch."""
-        return float(self.offset * self.batch_size) / len(self)
+        return float(self.offset * self.batch_size * self.num_replicas) / len(self)
 
     def reset(self, batch_size=None, bptt=None, is_new_epoch=False):
         """Reset data counter and offset.
@@ -130,7 +132,8 @@ class Dataset(object):
 
         if self.shuffle:
             self.df = self.df.reindex(np.random.permutation(self.df.index))
-            self.concat_ids = self.concat_utterances(self.df)
+
+        self.concat_ids = self.concat_utterances(self.df)
         self.offset = 0
 
     def __len__(self):
@@ -151,10 +154,9 @@ class Dataset(object):
 
     def __next__(self):
         bptt = self.bptt_tmp if self.bptt_tmp is not None else self.bptt
-        batch_size = self.batch_size_tmp if self.batch_size_tmp is not None else self.batch_size
 
-        ys = self.concat_ids[self.rank, :, self.offset:self.offset + self.bptt + 1]
-        self.offset += self.bptt
+        ys = self.concat_ids[self.rank, :, self.offset:self.offset + bptt + 1]
+        self.offset += bptt
         # NOTE: the last token in ys must be feeded as inputs in the next mini-batch
 
         is_new_epoch = self.offset >= self.concat_ids.shape[-1] - 1
