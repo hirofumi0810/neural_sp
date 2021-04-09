@@ -59,7 +59,6 @@ def main(gpu, ngpus_per_node, args):
                 setattr(args, k, v)
 
     # for multi-GPUs
-    accum_grad_n_steps = max(1, args.accum_grad_n_steps // max(1, args.n_gpus))
     if args.distributed:
         if args.dist_url == "env://" and args.rank == -1:
             args.rank = int(os.environ["RANK"])
@@ -208,7 +207,7 @@ def main(gpu, ngpus_per_node, args):
     reporter = Reporter(args, model, rank)
     args.wandb_id = reporter.wandb_id
     if args.resume:
-        n_steps = scheduler.n_steps * accum_grad_n_steps
+        n_steps = scheduler.n_steps * args.accum_grad_n_steps
         reporter.resume(n_steps, resume_epoch)
 
     # Save conf file as a yaml file
@@ -219,8 +218,7 @@ def main(gpu, ngpus_per_node, args):
     start_time_train = time.time()
     for ep in range(resume_epoch, args.n_epochs):
         train_one_epoch(model, train_set, dev_set, rank, world_size,
-                        scheduler, reporter, logger, args,
-                        accum_grad_n_steps, amp, scaler)
+                        scheduler, reporter, logger, args, amp, scaler)
 
         # Save checkpoint and validate model per epoch
         if reporter.n_epochs + 1 < args.eval_start_epoch:
@@ -291,11 +289,11 @@ def main(gpu, ngpus_per_node, args):
 
 
 def train_one_epoch(model, train_set, dev_set, rank, num_replicas,
-                    scheduler, reporter, logger, args,
-                    accum_grad_n_steps, amp, scaler):
+                    scheduler, reporter, logger, args, amp, scaler):
     """Train model for one epoch."""
     if rank == 0:
         pbar_epoch = tqdm(total=len(train_set))
+    accum_grad_n_steps = max(1, args.accum_grad_n_steps // num_replicas)
     print_step = args.print_step // num_replicas
 
     _accum_n_steps = 0  # reset at every epoch
