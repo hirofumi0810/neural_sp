@@ -40,9 +40,6 @@ def main():
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
                           tsv_path=s,
-                          dict_path=os.path.join(dir_name, 'dict.txt'),
-                          wp_model=os.path.join(dir_name, 'wp.model'),
-                          unit=args.unit,
                           batch_size=args.recog_batch_size,
                           bptt=args.bptt,
                           backward=args.backward,

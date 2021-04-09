@@ -4,7 +4,7 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Evaluate the LM."""
+"""Evaluate LM."""
 
 import logging
 import os
@@ -38,9 +38,6 @@ def main():
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
                           tsv_path=s,
-                          dict_path=os.path.join(dir_name, 'dict.txt'),
-                          wp_model=os.path.join(dir_name, 'wp.model'),
-                          unit=args.unit,
                           batch_size=args.recog_batch_size,
                           bptt=args.bptt,
                           backward=args.backward,
@@ -70,7 +67,7 @@ def main():
 
         start_time = time.time()
 
-        ppl, _ = eval_ppl([model], dataset, batch_size=1, bptt=args.bptt,
+        ppl, _ = eval_ppl([model], dataset, batch_size=args.recog_batch_size, bptt=args.bptt,
                           n_caches=args.recog_n_caches, progressbar=True)
         ppl_avg += ppl
         print('PPL (%s): %.2f' % (dataset.set, ppl))
