@@ -38,9 +38,9 @@ ctc_fc_list: "512"
 ### optimization
 batch_size: 32
 optimizer: noam
-n_epochs: 25
+n_epochs: 30
 convert_to_sgd_epoch: 100
-print_step: 600  # 200->600
+print_step: 1200
 metric: accuracy
 lr_factor: 5.0
 early_stop_patient_n_epochs: 5
@@ -64,3 +64,9 @@ ctc_weight: 0.3
 ctc_lsm_prob: 0.1
 mtl_per_batch: false
 task_specific_layer: false
+# SpecAugment
+freq_width: 27
+n_freq_masks: 2
+time_width: 50
+n_time_masks: 2
+time_width_upper: 1.0

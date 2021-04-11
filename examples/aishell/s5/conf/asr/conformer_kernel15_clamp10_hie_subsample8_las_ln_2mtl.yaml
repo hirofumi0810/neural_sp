@@ -12,46 +12,66 @@ conv_layer_norm: false
 subsample: "1_1_1_2_1_1_1_2_1_1_1_1"
 subsample_type: max_pool
 enc_type: conv_conformer
-conformer_kernel_size: 3
+conformer_kernel_size: 15
+conformer_normalization: layer_norm
 enc_n_layers: 12
+enc_n_layers_sub1: 6
 transformer_enc_pe_type: relative  ###
+transformer_enc_clamp_len: 10  ###
 transformer_enc_d_model: 256
 transformer_enc_d_ff: 1024  ###
 transformer_enc_n_heads: 4
-dec_type: transformer
-dec_n_layers: 6
-transformer_dec_pe_type: 1dconv3L  ### this is effective
-transformer_dec_attn_type: scaled_dot
-transformer_dec_d_model: 256
-transformer_dec_d_ff: 1024  ###
-transformer_dec_n_heads: 4
+attn_type: location
+attn_conv_n_channels: 10
+attn_conv_width: 201
+attn_dim: 512
+attn_n_heads: 1
+dec_type: lstm
+dec_n_units: 1024
+dec_n_projs: 0
+dec_n_layers: 1
+dec_bottleneck_dim: 1024  ### this is effective
+emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
+dec_config_sub1:
+  ctc_fc_list: ""
 ### optimization
 batch_size: 32
 optimizer: noam
-n_epochs: 30  # 35->30
+n_epochs: 60
 convert_to_sgd_epoch: 100
-print_step: 600  # 200->600
-metric: accuracy
-lr_factor: 1.0
+print_step: 1200
+metric: edit_distance
+lr_factor: 5.0
 early_stop_patient_n_epochs: 5
 shuffle_bucket: true  ### this is important
 sort_stop_epoch: 100
 eval_start_epoch: 1
 warmup_n_steps: 25000
 accum_grad_n_steps: 8
+### initialization
+param_init: 0.1
 ### regularization
 clip_grad_norm: 5.0
 dropout_in: 0.0
 dropout_enc: 0.1
-dropout_dec: 0.1
-dropout_emb: 0.1
+dropout_dec: 0.4
+dropout_emb: 0.4
 dropout_att: 0.0
 weight_decay: 1e-6
+ss_prob: 0.2
 lsm_prob: 0.1
 ### MTL
 ctc_weight: 0.3
+ctc_weight_sub1: 0.2
 ctc_lsm_prob: 0.1
+sub1_weight: 0.2
 mtl_per_batch: false
 task_specific_layer: false
+# SpecAugment
+freq_width: 27
+n_freq_masks: 2
+time_width: 100
+n_time_masks: 2
+time_width_upper: 1.0
