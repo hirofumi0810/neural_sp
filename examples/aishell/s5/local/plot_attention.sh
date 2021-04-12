@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -11,6 +11,7 @@ model_bwd=
 gpu=
 stdout=false
 n_threads=1
+eval_set="test"
 
 ### path to save preproecssed data
 data=/n/work2/inaguma/corpus/aishell1
@@ -56,7 +57,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in test; do
+for set in eval_set; do
     recog_dir=$(dirname ${model})/plot_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}

@@ -1,0 +1,12 @@
+# optimization
+n_epochs: 30  # 15->30
+print_step: 2400  # 1200->2400
+lr_decay_start_epoch: 1
+lr_decay_rate: 0.9
+
+# mask
+freq_width: 27
+n_freq_masks: 2
+time_width: 50
+n_time_masks: 2
+time_width_upper: 1.0
