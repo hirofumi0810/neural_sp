@@ -15,6 +15,6 @@ neural_sp.egg-info
 wandb
 
 # CI test
-example/ci_test/data
-example/ci_test/results
-example/ci_test/sample
+examples/ci_test/data
+examples/ci_test/results
+examples/ci_test/sample
