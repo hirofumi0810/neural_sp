@@ -27,8 +27,7 @@ transformer_dec_n_heads: 4
 tie_embedding: false
 ctc_fc_list: "8"
 ### optimization
-batch_size: 16000
-batch_size_type: frame
+batch_size: 1
 optimizer: noam
 n_epochs: 4
 convert_to_sgd_epoch: 100
