@@ -32,7 +32,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in eval_set; do
+for set in ${eval_set}; do
     recog_dir=$(dirname ${model})/plot_${set}
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
