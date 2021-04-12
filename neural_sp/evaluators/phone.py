@@ -61,7 +61,7 @@ def eval_phone(models, dataloader, params, epoch, rank=0,
     n_utt = 0
 
     # Reset data counter
-    dataloader.reset(params.get('recog_batch_size'))
+    dataloader.reset(params.get('recog_batch_size'), 'seq')
 
     if progressbar:
         pbar = tqdm(total=len(dataloader))
