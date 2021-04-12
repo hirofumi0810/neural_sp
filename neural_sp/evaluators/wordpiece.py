@@ -66,7 +66,7 @@ def eval_wordpiece(models, dataloader, params, epoch, rank=0,
     last_success_frame_ratio = 0
 
     # Reset data counter
-    dataloader.reset(params.get('recog_batch_size'))
+    dataloader.reset(params.get('recog_batch_size'), 'seq')
 
     if progressbar:
         pbar = tqdm(total=len(dataloader))

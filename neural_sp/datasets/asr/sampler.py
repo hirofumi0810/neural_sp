@@ -25,21 +25,21 @@ else:
 
 class CustomBatchSampler(sampler):
 
-    def __init__(self, dataset, distributed, batch_size, dynamic_batching,
-                 shuffle_bucket, discourse_aware, sort_stop_epoch,
-                 longform_max_n_frames=0, seed=1, resume_epoch=0):
+    def __init__(self, dataset, distributed, batch_size, batch_size_type,
+                 dynamic_batching, shuffle_bucket, discourse_aware, sort_stop_epoch,
+                 longform_max_n_frames=0, seed=1):
         """Custom BatchSampler.
 
         Args:
             dataset (Dataset): pytorch Dataset class
             batch_size (int): size of mini-batch
+            batch_size_type (str): type of batch size counting
             dynamic_batching (bool): change batch size dynamically in training
             shuffle_bucket (bool): gather similar length of utterances and shuffle them
             discourse_aware (bool): sort in the discourse order
             sort_stop_epoch (int): training will revert back to a random order after sort_stop_epoch
             longform_max_n_frames (int): maximum input length for long-form evaluation
-            seed (int): seed for randamization
-            resume_epoch (int): epoch to resume training
+            seed (int): seed for randomization
 
         """
         if distributed:
@@ -57,7 +57,7 @@ class CustomBatchSampler(sampler):
 
         self.df = dataset.df
         self.batch_size = batch_size
-
+        self.batch_size_type = batch_size_type
         self.dynamic_batching = dynamic_batching
         self.shuffle_bucket = shuffle_bucket
         self.sort_stop_epoch = sort_stop_epoch
@@ -74,11 +74,11 @@ class CustomBatchSampler(sampler):
             assert not distributed
             self.indices_buckets = longform_bucketing(self.df, batch_size, longform_max_n_frames)
         elif shuffle_bucket:
-            self.indices_buckets = shuffle_bucketing(self.df, batch_size, self.dynamic_batching,
-                                                     seed=resume_epoch + seed,
+            self.indices_buckets = shuffle_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
+                                                     seed=seed,
                                                      num_replicas=self.num_replicas)
         else:
-            self.indices_buckets = sort_bucketing(self.df, batch_size, self.dynamic_batching,
+            self.indices_buckets = sort_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
                                                   num_replicas=self.num_replicas)
         self._iteration = len(self.indices_buckets)
 
@@ -101,7 +101,7 @@ class CustomBatchSampler(sampler):
     def offset(self):
         return self._offset
 
-    def reset(self, batch_size=None, epoch=0):
+    def reset(self, batch_size=None, batch_size_type=None, epoch=0):
         """Reset data counter and offset.
 
             Args:
@@ -111,6 +111,8 @@ class CustomBatchSampler(sampler):
         """
         if batch_size is None:
             batch_size = self.batch_size
+        if batch_size_type is None:
+            batch_size_type = self.batch_size_type
 
         self._offset = 0
 
@@ -119,11 +121,11 @@ class CustomBatchSampler(sampler):
         elif self.longform_xmax > 0:
             self.indices_buckets = longform_bucketing(self.df, batch_size, self.longform_xmax)
         elif self.shuffle_bucket:
-            self.indices_buckets = shuffle_bucketing(self.df, batch_size, self.dynamic_batching,
-                                                     seed=epoch + self.seed,
+            self.indices_buckets = shuffle_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
+                                                     seed=self.seed + epoch,
                                                      num_replicas=self.num_replicas)
         else:
-            self.indices_buckets = sort_bucketing(self.df, batch_size, self.dynamic_batching,
+            self.indices_buckets = sort_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
                                                   num_replicas=self.num_replicas)
 
     def sample_index(self):

@@ -211,6 +211,9 @@ def build_parser():
     parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
                         help='')
     # optimization
+    parser.add_argument('--batch_size_type', type=str, default='seq',
+                        choices=['seq', 'token', 'frame'],
+                        help='type of batch size counting')
     parser.add_argument('--metric', type=str, default='edit_distance',
                         choices=['edit_distance', 'loss', 'accuracy', 'ppl', 'bleu', 'mse'],
                         help='metric for evaluation during training')

@@ -57,14 +57,16 @@ class CustomDataLoader(DataLoader):
     def n_frames(self):
         return self.dataset.n_frames
 
-    def reset(self, batch_size=None, is_new_epoch=False):
+    def reset(self, batch_size=None, batch_size_type=None, is_new_epoch=False):
         """Reset data counter and offset.
 
-            Args:
-                batch_size (int): size of mini-batch
+        Args:
+            batch_size (int): size of mini-batch
+            batch_size_type (str): type of batch size counting
+            is_new_epoch (bool): flag for new epoch
 
         """
         if is_new_epoch:
             self.epoch += 1
 
-        self.batch_sampler.reset(batch_size, epoch=self.epoch)
+        self.batch_sampler.reset(batch_size, batch_size_type, epoch=self.epoch)
