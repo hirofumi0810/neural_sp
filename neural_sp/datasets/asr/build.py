@@ -13,7 +13,7 @@ from neural_sp.datasets.asr.dataloader import CustomDataLoader
 from neural_sp.datasets.asr.dataset import CustomDataset
 
 
-def build_dataloader(args, tsv_path, batch_size, is_test=False,
+def build_dataloader(args, tsv_path, batch_size, batch_size_type='seq', is_test=False,
                      sort_by='utt_id', short2long=False, sort_stop_epoch=1e10,
                      tsv_path_sub1=False, tsv_path_sub2=False,
                      num_workers=0, pin_memory=False, distributed=False,
@@ -53,6 +53,7 @@ def build_dataloader(args, tsv_path, batch_size, is_test=False,
     batch_sampler = CustomBatchSampler(dataset=dataset,
                                        distributed=distributed,
                                        batch_size=batch_size,
+                                       batch_size_type=batch_size_type,
                                        dynamic_batching=args.dynamic_batching,
                                        shuffle_bucket=args.shuffle_bucket and not is_test,
                                        sort_stop_epoch=args.sort_stop_epoch,

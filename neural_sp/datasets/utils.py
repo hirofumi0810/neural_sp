@@ -16,7 +16,7 @@ def count_vocab_size(dict_path):
     return vocab_count
 
 
-def set_batch_size(batch_size, min_xlen, min_ylen, dynamic_batching):
+def _set_batch_size_seq(batch_size, min_xlen, min_ylen, dynamic_batching, num_replicas):
     if not dynamic_batching:
         return batch_size
 
@@ -27,22 +27,71 @@ def set_batch_size(batch_size, min_xlen, min_ylen, dynamic_batching):
     else:
         batch_size //= 8
 
-    return max(1, batch_size)
+    batch_size = batch_size // num_replicas * num_replicas
+    batch_size = max(num_replicas, batch_size)
+    # NOTE: ensure batch size>=1 for all replicas
+    return batch_size
 
 
-def sort_bucketing(df, batch_size, dynamic_batching, num_replicas=1):
-    """Bucket utterances in a sorted dataframe. This is also used for evaluation."""
+def _set_batch_size_bin(max_n_bins, lengths, num_replicas):
+    total_bin = 0
+    batch_size = 0
+    for length in lengths:
+        if length > max_n_bins:
+            raise ValueError(f"max_n_bins is too small: {max_n_bins}")
+        if total_bin + length <= max_n_bins:
+            total_bin += length
+            batch_size += 1
+        else:
+            break
+
+    batch_size = batch_size // num_replicas * num_replicas
+    batch_size = max(num_replicas, batch_size)
+    # NOTE: ensure batch size>=1 for all replicas
+    return batch_size
+
+
+def set_batch_size(batch_size, batch_size_type, dynamic_batching, num_replicas,
+                   df, offset):
+    if batch_size_type == 'seq':
+        min_xlen = df[offset:offset + 1]['xlen'].values[0]
+        min_ylen = df[offset:offset + 1]['ylen'].values[0]
+        _batch_size = _set_batch_size_seq(batch_size, min_xlen, min_ylen,
+                                          dynamic_batching, num_replicas)
+    elif batch_size_type == 'frame':
+        xlens = df[offset:]['xlen'].values
+        _batch_size = _set_batch_size_bin(batch_size, xlens, num_replicas)
+    elif batch_size_type == 'token':
+        ylens = df[offset:]['ylen'].values
+        _batch_size = _set_batch_size_bin(batch_size, ylens, num_replicas)
+    else:
+        raise NotImplementedError(batch_size_type)
+    return _batch_size
+
+
+def sort_bucketing(df, batch_size, batch_size_type, dynamic_batching,
+                   num_replicas=1):
+    """Bucket utterances in a sorted dataframe. This is also used for evaluation.
+
+    Args:
+        batch_size (int): size of mini-batch
+        batch_size_type (str): type of batch size counting
+        dynamic_batching (bool): change batch size dynamically in training
+        num_replicas (int): number of replicas for distributed training
+    Returns:
+        indices_buckets (List[List]): bucketted utterances
+
+    """
     indices_buckets = []  # list of list
     offset = 0
     indices_rest = list(df.index)
     while True:
-        min_xlen = df[offset:offset + 1]['xlen'].values[0]
-        min_ylen = df[offset:offset + 1]['ylen'].values[0]
-        _batch_size = set_batch_size(batch_size, min_xlen, min_ylen, dynamic_batching)
-        _batch_size = max(num_replicas, _batch_size)
-        # NOTE: ensure batch size>=1 for all replicas
+        _batch_size = set_batch_size(batch_size, batch_size_type, dynamic_batching,
+                                     num_replicas, df, offset)
+
         indices = list(df[offset:offset + _batch_size].index)
-        indices_buckets.append(indices)
+        if len(indices) >= num_replicas:
+            indices_buckets.append(indices)
         offset += len(indices)
         if offset >= len(df):
             break
@@ -50,18 +99,29 @@ def sort_bucketing(df, batch_size, dynamic_batching, num_replicas=1):
     return indices_buckets
 
 
-def shuffle_bucketing(df, batch_size, dynamic_batching, seed=None, num_replicas=1):
-    """Bucket utterances having a similar length and shuffle them for Transformer training."""
+def shuffle_bucketing(df, batch_size, batch_size_type, dynamic_batching,
+                      seed=None, num_replicas=1):
+    """Bucket utterances having a similar length and shuffle them for Transformer training.
+
+    Args:
+        batch_size (int): size of mini-batch
+        batch_size_type (str): type of batch size counting
+        dynamic_batching (bool): change batch size dynamically in training
+        seed (int): seed for randomization
+        num_replicas (int): number of replicas for distributed training
+    Returns:
+        indices_buckets (List[List]): bucketted utterances
+
+    """
     indices_buckets = []  # list of list
     offset = 0
     while True:
-        min_xlen = df[offset:offset + 1]['xlen'].values[0]
-        min_ylen = df[offset:offset + 1]['ylen'].values[0]
-        _batch_size = set_batch_size(batch_size, min_xlen, min_ylen, dynamic_batching)
-        _batch_size = max(num_replicas, _batch_size)
-        # NOTE: ensure batch size>=1 for all replicas
+        _batch_size = set_batch_size(batch_size, batch_size_type, dynamic_batching,
+                                     num_replicas, df, offset)
+
         indices = list(df[offset:offset + _batch_size].index)
-        indices_buckets.append(indices)
+        if len(indices) >= num_replicas:
+            indices_buckets.append(indices)
         offset += len(indices)
         if offset >= len(df):
             break

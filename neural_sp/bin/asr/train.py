@@ -99,6 +99,7 @@ def main(gpu, ngpus_per_node, args):
                                  tsv_path_sub1=args.train_set_sub1,
                                  tsv_path_sub2=args.train_set_sub2,
                                  batch_size=batch_size,
+                                 batch_size_type=args.batch_size_type,
                                  max_n_frames=args.max_n_frames,
                                  sort_by=args.sort_by,
                                  short2long=args.sort_short2long,
@@ -113,6 +114,7 @@ def main(gpu, ngpus_per_node, args):
                                tsv_path_sub1=args.dev_set_sub1,
                                tsv_path_sub2=args.dev_set_sub2,
                                batch_size=1 if 'transducer' in args.dec_type else args.batch_size,
+                               batch_size_type='seq' if 'transducer' in args.dec_type else args.batch_size_type,
                                max_n_frames=1600,
                                word_alignment_dir=args.dev_word_alignment,
                                ctc_alignment_dir=args.dev_ctc_alignment)
