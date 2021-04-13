@@ -6,6 +6,7 @@
 . ./path.sh
 
 nj=32
+speeds="0.9 1.0 1.1"
 
 . utils/parse_options.sh
 
@@ -20,17 +21,21 @@ train_set=$3
 tmpdir=$(mktemp -d ${data}/${train_set_original}/tmp-XXXXX)
 trap 'rm -rf ${tmpdir}' EXIT
 
-utils/perturb_data_dir_speed.sh 0.9 ${data}/${train_set_original} ${tmpdir}/temp1
-utils/perturb_data_dir_speed.sh 1.0 ${data}/${train_set_original} ${tmpdir}/temp2
-utils/perturb_data_dir_speed.sh 1.1 ${data}/${train_set_original} ${tmpdir}/temp3
-utils/combine_data.sh --extra-files utt2uniq ${data}/${train_set} ${tmpdir}/temp1 ${tmpdir}/temp2 ${tmpdir}/temp3
-rm -r ${tmpdir}/temp1 ${tmpdir}/temp2 ${tmpdir}/temp3
+if [ ${train_set_original} = ${train_set} ];then
+  echo "train_set_original and train_set should be different names"
+fi
+
+for speed in ${speeds}; do
+  utils/perturb_data_dir_speed.sh ${speed} ${data}/${train_set_original} ${tmpdir}/temp${speed}
+done
+utils/combine_data.sh --extra-files utt2uniq ${data}/${train_set} ${tmpdir}/temp*
+rm -r ${tmpdir}/temp*
 steps/make_fbank.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
     ${data}/${train_set} ${data}/log/make_fbank/${train_set} ${data}/fbank
-awk -v p="sp0.9-" '{printf("%s %s%s\n", $1, p, $1);}' ${data}/${train_set_original}/utt2spk > ${data}/${train_set}/utt_map
-utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/${train_set_original}/text >${data}/${train_set}/text
-awk -v p="sp1.0-" '{printf("%s %s%s\n", $1, p, $1);}' ${data}/${train_set_original}/utt2spk > ${data}/${train_set}/utt_map
-utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/${train_set_original}/text >>${data}/${train_set}/text
-awk -v p="sp1.1-" '{printf("%s %s%s\n", $1, p, $1);}' ${data}/${train_set_original}/utt2spk > ${data}/${train_set}/utt_map
-utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/${train_set_original}/text >>${data}/${train_set}/text
+touch ${data}/${train_set}/text.tmp
+for speed in ${speeds}; do
+    awk -v p="sp${speed}-" '{printf("%s %s%s\n", $1, p, $1);}' ${data}/${train_set_original}/utt2spk > ${data}/${train_set}/utt_map
+    utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/${train_set_original}/text >>${data}/${train_set}/text.tmp
+done
+mv ${data}/${train_set}/text.tmp ${data}/${train_set}/text
 utils/fix_data_dir.sh ${data}/${train_set}
