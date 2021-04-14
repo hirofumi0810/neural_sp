@@ -18,7 +18,7 @@ def build_dataloader(args, tsv_path, batch_size, batch_size_type='seq', is_test=
                      tsv_path_sub1=False, tsv_path_sub2=False,
                      num_workers=0, pin_memory=False, distributed=False,
                      first_n_utterances=-1, word_alignment_dir=None, ctc_alignment_dir=None,
-                     max_n_frames=1600, longform_max_n_frames=0):
+                     max_n_frames=1600, longform_max_n_frames=0, resume_epoch=0):
 
     dataset = CustomDataset(corpus=args.corpus,
                             tsv_path=tsv_path,
@@ -58,7 +58,8 @@ def build_dataloader(args, tsv_path, batch_size, batch_size_type='seq', is_test=
                                        shuffle_bucket=args.shuffle_bucket and not is_test,
                                        sort_stop_epoch=args.sort_stop_epoch,
                                        discourse_aware=args.discourse_aware,
-                                       longform_max_n_frames=longform_max_n_frames)
+                                       longform_max_n_frames=longform_max_n_frames,
+                                       resume_epoch=resume_epoch)
 
     dataloader = CustomDataLoader(dataset=dataset,
                                   batch_sampler=batch_sampler,
