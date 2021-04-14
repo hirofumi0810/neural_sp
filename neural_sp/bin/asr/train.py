@@ -19,6 +19,7 @@ import time
 import torch
 import torch.multiprocessing as mp
 import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
 
 from neural_sp.bin.args_asr import parse_args_train
@@ -41,7 +42,6 @@ from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
 from neural_sp.models.data_parallel import (
     CustomDataParallel,
-    CustomDistributedDataParallel,
     CPUWrapperASR
 )
 from neural_sp.models.lm.build import build_lm
@@ -280,7 +280,7 @@ def main(gpu, ngpus_per_node, args):
         model.cuda(gpu)
         if args.distributed:
             args.workers = int((args.workers + ngpus_per_node - 1) / ngpus_per_node)
-            model = CustomDistributedDataParallel(model, device_ids=[gpu])
+            model = DDP(model, device_ids=[gpu])
         else:
             model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
 
