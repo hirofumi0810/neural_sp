@@ -27,7 +27,7 @@ class CustomBatchSampler(sampler):
 
     def __init__(self, dataset, distributed, batch_size, batch_size_type,
                  dynamic_batching, shuffle_bucket, discourse_aware, sort_stop_epoch,
-                 longform_max_n_frames=0, seed=1):
+                 longform_max_n_frames=0, seed=1, resume_epoch=0):
         """Custom BatchSampler.
 
         Args:
@@ -40,6 +40,7 @@ class CustomBatchSampler(sampler):
             sort_stop_epoch (int): training will revert back to a random order after sort_stop_epoch
             longform_max_n_frames (int): maximum input length for long-form evaluation
             seed (int): seed for randomization
+            resume_epoch (int): epoch to resume training
 
         """
         if distributed:
@@ -75,7 +76,7 @@ class CustomBatchSampler(sampler):
             self.indices_buckets = longform_bucketing(self.df, batch_size, longform_max_n_frames)
         elif shuffle_bucket:
             self.indices_buckets = shuffle_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
-                                                     seed=seed,
+                                                     seed=seed + resume_epoch,
                                                      num_replicas=self.num_replicas)
         else:
             self.indices_buckets = sort_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,

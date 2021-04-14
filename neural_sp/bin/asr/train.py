@@ -101,6 +101,7 @@ def main(gpu, ngpus_per_node, args):
                                  batch_size=batch_size,
                                  batch_size_type=args.batch_size_type,
                                  max_n_frames=args.max_n_frames,
+                                 resume_epoch=resume_epoch,
                                  sort_by=args.sort_by,
                                  short2long=args.sort_short2long,
                                  sort_stop_epoch=args.sort_stop_epoch,
