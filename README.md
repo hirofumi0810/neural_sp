@@ -114,8 +114,8 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### AISHELL-1 (CER)
 | Model         | dev | test |
 | -----------   | --- | ---- |
+| Conformer LAS | 4.1 | 4.5  |
 | Transformer   | 5.0 | 5.4  |
-| Conformer     | 4.7 | 5.2  |
 | Streaming MMA | 5.5 | 6.1  |
 
 ### CSJ (WER)
