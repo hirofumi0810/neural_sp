@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 
 class CustomDataLoader(DataLoader):
 
-    def __init__(self, dataset, batch_sampler,
+    def __init__(self, dataset, batch_sampler, sort_stop_epoch,
                  num_workers=0, collate_fn=None, pin_memory=False,
                  timeout=0, worker_init_fn=None):
 
@@ -41,6 +41,7 @@ class CustomDataLoader(DataLoader):
         self.token2idx = dataset._token2idx
 
         self.epoch = 0  # counter
+        self.sort_stop_epoch = sort_stop_epoch
 
     def __len__(self):
         """Number of utterances."""
@@ -68,5 +69,20 @@ class CustomDataLoader(DataLoader):
         """
         if is_new_epoch:
             self.epoch += 1
+
+            # shuffle the whole data per epoch (sort -> shuffle)
+            if self.epoch >= self.sort_stop_epoch:
+                self.batch_sampler.shuffle_bucket = True
+
+                # This changes not only the order of buckets but also how buckets are constructed
+                self.batch_sampler.df = self.batch_sampler.df.reindex(
+                    np.random.permutation(self.batch_sampler.df.index))
+                for i in range(1, 3):
+                    if getattr(self.batch_sampler, 'df_sub' + str(i)) is not None:
+                        setattr(self.batch_sampler, 'df_sub' + str(i),
+                                getattr(self.batch_sampler, 'df_sub' + str(i)).reindex(self.batch_sampler.df.index).reset_index())
+
+                # Re-indexing
+                self.batch_sampler.df = self.batch_sampler.df.reset_index()
 
         self.batch_sampler.reset(batch_size, batch_size_type, epoch=self.epoch)

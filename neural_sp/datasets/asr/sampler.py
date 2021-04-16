@@ -26,7 +26,7 @@ else:
 class CustomBatchSampler(sampler):
 
     def __init__(self, dataset, distributed, batch_size, batch_size_type,
-                 dynamic_batching, shuffle_bucket, discourse_aware, sort_stop_epoch,
+                 dynamic_batching, shuffle_bucket, discourse_aware,
                  longform_max_n_frames=0, seed=1, resume_epoch=0):
         """Custom BatchSampler.
 
@@ -37,7 +37,6 @@ class CustomBatchSampler(sampler):
             dynamic_batching (bool): change batch size dynamically in training
             shuffle_bucket (bool): gather similar length of utterances and shuffle them
             discourse_aware (bool): sort in the discourse order
-            sort_stop_epoch (int): training will revert back to a random order after sort_stop_epoch
             longform_max_n_frames (int): maximum input length for long-form evaluation
             seed (int): seed for randomization
             resume_epoch (int): epoch to resume training
@@ -61,23 +60,22 @@ class CustomBatchSampler(sampler):
         self.batch_size_type = batch_size_type
         self.dynamic_batching = dynamic_batching
         self.shuffle_bucket = shuffle_bucket
-        self.sort_stop_epoch = sort_stop_epoch
         self.discourse_aware = discourse_aware
         self.longform_xmax = longform_max_n_frames
 
         self._offset = 0
         # NOTE: epoch should not be counted in BatchSampler
 
-        if discourse_aware:
+        if shuffle_bucket:
+            self.indices_buckets = shuffle_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
+                                                     seed=seed + resume_epoch,
+                                                     num_replicas=self.num_replicas)
+        elif discourse_aware:
             assert distributed
             self.indices_buckets = discourse_bucketing(self.df, batch_size)
         elif longform_max_n_frames > 0:
             assert not distributed
             self.indices_buckets = longform_bucketing(self.df, batch_size, longform_max_n_frames)
-        elif shuffle_bucket:
-            self.indices_buckets = shuffle_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
-                                                     seed=seed + resume_epoch,
-                                                     num_replicas=self.num_replicas)
         else:
             self.indices_buckets = sort_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
                                                   num_replicas=self.num_replicas)
@@ -117,17 +115,18 @@ class CustomBatchSampler(sampler):
 
         self._offset = 0
 
-        if self.discourse_aware:
-            self.indices_buckets = discourse_bucketing(self.df, batch_size)
-        elif self.longform_xmax > 0:
-            self.indices_buckets = longform_bucketing(self.df, batch_size, self.longform_xmax)
-        elif self.shuffle_bucket:
+        if self.shuffle_bucket:
             self.indices_buckets = shuffle_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
                                                      seed=self.seed + epoch,
                                                      num_replicas=self.num_replicas)
+        elif self.discourse_aware:
+            self.indices_buckets = discourse_bucketing(self.df, batch_size)
+        elif self.longform_xmax > 0:
+            self.indices_buckets = longform_bucketing(self.df, batch_size, self.longform_xmax)
         else:
             self.indices_buckets = sort_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
                                                   num_replicas=self.num_replicas)
+        self._iteration = len(self.indices_buckets)
 
     def sample_index(self):
         """Sample data indices of mini-batch.

@@ -56,13 +56,13 @@ def build_dataloader(args, tsv_path, batch_size, batch_size_type='seq', is_test=
                                        batch_size_type=batch_size_type,
                                        dynamic_batching=args.dynamic_batching,
                                        shuffle_bucket=args.shuffle_bucket and not is_test,
-                                       sort_stop_epoch=args.sort_stop_epoch,
                                        discourse_aware=args.discourse_aware,
                                        longform_max_n_frames=longform_max_n_frames,
                                        resume_epoch=resume_epoch)
 
     dataloader = CustomDataLoader(dataset=dataset,
                                   batch_sampler=batch_sampler,
+                                  sort_stop_epoch=args.sort_stop_epoch,
                                   collate_fn=custom_collate_fn,
                                   num_workers=num_workers,
                                   pin_memory=pin_memory)
@@ -71,7 +71,7 @@ def build_dataloader(args, tsv_path, batch_size, batch_size_type='seq', is_test=
 
 
 def custom_collate_fn(data):
-    """Custom collate_fn.
+    """Custom collate_fn to gather dict per sample.
 
     Args:
         data (List[dict]):
