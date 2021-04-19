@@ -10,7 +10,7 @@
 set -e
 
 echo "$0: downloading Tedlium 4 gram language models (it won't re-download if it was already downloaded.)"
-wget --continue http://kaldi-asr.org/models/5/4gram_small.arpa.gz -P ${data}/local/local_lm/${data}/arpa || exit 1
-wget --continue http://kaldi-asr.org/models/5/4gram_big.arpa.gz -P ${data}/local/local_lm/${data}/arpa || exit 1
+wget --continue http://kaldi-asr.org/models/5/4gram_small.arpa.gz -P ${data}/local/local_lm/data/arpa || exit 1
+wget --continue http://kaldi-asr.org/models/5/4gram_big.arpa.gz -P ${data}/local/local_lm/data/arpa || exit 1
 
 exit 0

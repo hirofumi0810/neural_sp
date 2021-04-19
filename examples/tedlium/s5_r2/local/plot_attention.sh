@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -38,6 +38,7 @@ asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=10  # for Transformer
 oracle=false
+longform_max_n_frames=0
 mma_delay_threshold=-1
 
 . ./cmd.sh
@@ -87,6 +88,9 @@ for set in test; do
     fi
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
+    fi
+    if [ ${longform_max_n_frames} != 0 ]; then
+        recog_dir=${recog_dir}_longform${longform_max_n_frames}
     fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
@@ -142,6 +146,7 @@ for set in test; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_longform_max_n_frames ${longform_max_n_frames} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_mma_delay_threshold ${mma_delay_threshold} \

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -16,6 +16,7 @@ benchmark=true
 deterministic=false
 stdout=false
 wandb_id=""
+corpus=tedlium2
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char/phone
@@ -25,7 +26,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 #########################
 # ASR configuration
 #########################
-conf=conf/asr/blstm_las.yaml
+conf=conf/asr/transformer/conformer_kernel15_clamp10_hie_subsample8_las_long_ln.yaml
 conf2=
 asr_init=
 external_lm=
@@ -36,14 +37,14 @@ external_lm=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/work2/inaguma/results/tedlium2
+model=/n/work2/inaguma/results/${corpus}
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/work2/inaguma/corpus/tedlium2
+export data=/n/work2/inaguma/corpus/${corpus}
 
 ### path to original data
 export db=/n/rd21/corpora_7/tedlium
@@ -55,13 +56,6 @@ export db=/n/rd21/corpora_7/tedlium
 set -e
 set -u
 set -o pipefail
-
-if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: ./run.sh --gpu 0" 1>&2
-    exit 1
-fi
-n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 
 train_set=train_sp
 dev_set=dev_sp
@@ -186,6 +180,13 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     touch ${data}/.done_stage_2_${unit}${wp_type}${vocab}_sptrue && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
+if [ -z ${gpu} ]; then
+    echo "Error: set GPU number." 1>&2
+    echo "Usage: ./run.sh --gpu 0" 1>&2
+    exit 1
+fi
+n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
+
 mkdir -p ${model}
 if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo ============================================================================
@@ -215,7 +216,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     export OMP_NUM_THREADS=${n_gpus}
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --dist-url 'tcp://127.0.0.1:1623' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 \
-        --corpus tedlium2 \
+        --corpus ${corpus} \
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
@@ -241,7 +242,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     export OMP_NUM_THREADS=${n_gpus}
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --dist-url 'tcp://127.0.0.1:1623' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 \
-        --corpus tedlium2 \
+        --corpus ${corpus} \
         --use_wandb ${use_wandb} \
         --config ${conf} \
         --config2 ${conf2} \
