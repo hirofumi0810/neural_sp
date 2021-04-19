@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -25,9 +25,6 @@ model=/n/work2/inaguma/results/tedlium2
 ### path to save preproecssed data
 export data=/n/work2/inaguma/corpus/tedlium2
 
-### path to original data
-export db=/n/rd21/corpora_7/tedlium
-
 . ./cmd.sh
 . ./path.sh
 . utils/parse_options.sh
@@ -47,25 +44,10 @@ if [ ${unit} != wp ]; then
     wp_type=
 fi
 
-if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
-    echo ============================================================================
-    echo "                       Data Download (stage:-1)                            "
-    echo ============================================================================
-
-    for part in dev2010 tst2010 tst2013 tst2014 tst2015; do
-        local/download_and_untar.sh ${data} ${part}
-    done
-fi
-
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_streaming_stage_0 ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
-
-    # for part in dev2010 tst2010 tst2013 tst2014 tst2015; do
-    #     local/data_prep_eval.sh ${data} ${part}
-    # done
-    # exit 1
 
     for x in dev test; do
         mkdir -p ${data}/${x}_streaming
@@ -81,6 +63,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_streami
         # Concatenate references for the same speaker
         concat_ref.py ${data}/${x}_streaming/text ${data}/${x}/utt2spk > ${data}/${x}_streaming/text.sep
         cat ${data}/${x}_streaming/text.sep | sed -e 's/ <eos> / /g' > ${data}/${x}_streaming/text
+        rm ${data}/${x}_streaming/text.sep
     done
 
     touch ${data}/.done_streaming_stage_0 && echo "Finish data preparation (stage: 0)."
