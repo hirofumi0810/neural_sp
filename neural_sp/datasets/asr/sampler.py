@@ -3,6 +3,7 @@
 
 """Custom Sampler."""
 
+import logging
 import numpy as np
 import random
 import torch.distributed as dist
@@ -14,6 +15,7 @@ from neural_sp.datasets.utils import (
     sort_bucketing
 )
 
+logger = logging.getLogger(__name__)
 
 if dist.is_available():
     from torch.utils.data.distributed import DistributedSampler
@@ -56,7 +58,9 @@ class CustomBatchSampler(sampler):
         np.random.seed(seed)
 
         self.df = dataset.df
-        self.batch_size = batch_size
+        self.batch_size = batch_size * self.num_replicas
+        if self.num_replicas > 1 and self.rank == 0:
+            logger.info(f"Batch size is automatically increased from {batch_size} to {self.batch_size}.")
         self.batch_size_type = batch_size_type
         self.dynamic_batching = dynamic_batching
         self.shuffle_bucket = shuffle_bucket

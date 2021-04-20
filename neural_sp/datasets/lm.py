@@ -55,6 +55,8 @@ class Dataset(object):
         self.set = os.path.basename(tsv_path).split('.')[0]
         self.is_test = is_test
         self.batch_size = batch_size
+        if self.num_replicas > 1 and self.rank == 0:
+            logger.info(f"Batch size is automatically increased from {batch_size} to {batch_size * self.num_replicas}.")
         self.bptt = bptt
         self.batch_size_tmp = None
         self.bptt_tmp = None
