@@ -71,17 +71,17 @@ class CustomBatchSampler(sampler):
         # NOTE: epoch should not be counted in BatchSampler
 
         if shuffle_bucket:
-            self.indices_buckets = shuffle_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
+            self.indices_buckets = shuffle_bucketing(self.df, self.batch_size, batch_size_type, self.dynamic_batching,
                                                      seed=seed + resume_epoch,
                                                      num_replicas=self.num_replicas)
         elif discourse_aware:
             assert distributed
-            self.indices_buckets = discourse_bucketing(self.df, batch_size)
+            self.indices_buckets = discourse_bucketing(self.df, self.batch_size)
         elif longform_max_n_frames > 0:
             assert not distributed
-            self.indices_buckets = longform_bucketing(self.df, batch_size, longform_max_n_frames)
+            self.indices_buckets = longform_bucketing(self.df, self.batch_size, longform_max_n_frames)
         else:
-            self.indices_buckets = sort_bucketing(self.df, batch_size, batch_size_type, self.dynamic_batching,
+            self.indices_buckets = sort_bucketing(self.df, self.batch_size, batch_size_type, self.dynamic_batching,
                                                   num_replicas=self.num_replicas)
         self._iteration = len(self.indices_buckets)
 
