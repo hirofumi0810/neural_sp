@@ -39,7 +39,7 @@ def add_args_common(parser):
                         help='number of data loading workers')
     parser.add_argument('--pin_memory', default=False, type=strtobool,
                         help='')
-    parser.add_argument("--local_rank", default=-1, type=int)
+    parser.add_argument("--local_rank", default=0, type=int)
     parser.add_argument("--local_world_size", type=int, default=1)
     parser.add_argument('--dist-backend', default='nccl', type=str,
                         help='distributed backend')
