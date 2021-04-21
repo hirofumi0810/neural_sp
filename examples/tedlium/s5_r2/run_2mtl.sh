@@ -14,6 +14,7 @@ stop_stage=5
 gpu=
 benchmark=true
 deterministic=false
+pin_memory=false
 stdout=false
 wandb_id=""
 corpus=tedlium2
@@ -231,6 +232,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
         --cudnn_deterministic ${deterministic} \
+        --pin_memory ${pin_memory} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \

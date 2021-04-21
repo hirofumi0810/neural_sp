@@ -65,7 +65,7 @@ def build_dataloader(args, tsv_path, batch_size, batch_size_type='seq', is_test=
                                   sort_stop_epoch=args.sort_stop_epoch,
                                   collate_fn=custom_collate_fn,
                                   num_workers=num_workers,
-                                  pin_memory=pin_memory)
+                                  pin_memory=pin_memory and distributed)
 
     return dataloader
 

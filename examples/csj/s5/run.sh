@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -12,9 +12,11 @@ stop_stage=5
 gpu=
 benchmark=true
 deterministic=false
+pin_memory=false
 speed_perturb=false
 stdout=false
 wandb_id=""
+corpus=csj
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char/phone
@@ -35,14 +37,14 @@ external_lm=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/work2/inaguma/results/csj
+model=/n/work2/inaguma/results/${corpus}
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/work2/inaguma/corpus/csj
+export data=/n/work2/inaguma/corpus/${corpus}
 
 ### path to original data
 CSJDATATOP=/n/rd25/mimura/corpus/CSJ  ## CSJ database top directory.
@@ -72,20 +74,6 @@ lm_datasize=all  # default is the same data as ASR
 set -e
 set -u
 set -o pipefail
-
-if [ ${speed_perturb} = true ]; then
-  if [ -z ${conf2} ]; then
-    echo "Error: Set --conf2." 1>&2
-    exit 1
-  fi
-fi
-
-if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: ./run.sh --gpu 0" 1>&2
-    exit 1
-fi
-n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 
 train_set=train_nodev_${datasize}
 dev_set=dev_${datasize}
@@ -123,7 +111,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0
 
     # Remove <sp> and POS tag, and lowercase
     for x in train_${datasize} eval1 eval2 eval3; do
-        local/remove_pos.py ${data}/${x}/text | nkf -Z > ${data}/${x}/text.tmp
+        local/remove_pos.py ${data}/${x}/text | nkf -Z > ${data}/${x}/text.tmp || exit 1;
         mv ${data}/${x}/text.tmp ${data}/${x}/text
     done
 
@@ -142,12 +130,12 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1
         done
 
         # Use the first 4k sentences from training data as dev set. (39 speakers.)
-        utils/subset_data_dir.sh --first ${data}/train_${datasize} 4000 ${data}/${dev_set} || exit 1;  # 6hr 31min
-        n=$[$(cat ${data}/train_${datasize}/segments | wc -l) - 4000]
-        utils/subset_data_dir.sh --last ${data}/train_${datasize} ${n} ${data}/${train_set}.tmp || exit 1;
+        utils/subset_data_dir.sh --first ${data}/train_${datasize} 4000 ${data}/dev_${datasize} || exit 1;  # 6hr 31min
+        n=$[$(cat ${data}/train_${datasize}/text | wc -l) - 4000]
+        utils/subset_data_dir.sh --last ${data}/train_${datasize} ${n} ${data}/train_${datasize}.tmp || exit 1;
 
         # Finally, the full training set:
-        utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/${train_set} || exit 1;  # 233hr 36min
+        utils/data/remove_dup_utts.sh 300 ${data}/train_${datasize}.tmp ${data}/train_nodev_${datasize} || exit 1;  # 233hr 36min
         rm -rf ${data}/*.tmp
     fi
 
@@ -235,6 +223,13 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     touch ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
+if [ -z ${gpu} ]; then
+    echo "Error: set GPU number." 1>&2
+    echo "Usage: ./run.sh --gpu 0" 1>&2
+    exit 1
+fi
+n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
+
 mkdir -p ${model}
 if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo ============================================================================
@@ -260,9 +255,10 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
                  ${data}/dataset_lm/eval2_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
                  ${data}/dataset_lm/eval3_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv"
 
-    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
-        --dist-url 'tcp://127.0.0.1:1623' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 \
-        --corpus csj \
+    export OMP_NUM_THREADS=${n_gpus}
+    CUDA_VISIBLE_DEVICES=${gpu} python -m torch.distributed.launch --nproc_per_node=${n_gpus} --nnodes=1 --node_rank=0 \
+        ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py --local_world_size=${n_gpus} \
+        --corpus ${corpus} \
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
@@ -285,15 +281,17 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
 
-    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
-        --dist-url 'tcp://127.0.0.1:1623' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 \
-        --corpus csj \
+    export OMP_NUM_THREADS=${n_gpus}
+    CUDA_VISIBLE_DEVICES=${gpu} python -m torch.distributed.launch --nproc_per_node=${n_gpus} --nnodes=1 --node_rank=0 \
+        ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py --local_world_size=${n_gpus} \
+        --corpus ${corpus} \
         --use_wandb ${use_wandb} \
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
         --cudnn_deterministic ${deterministic} \
+        --pin_memory ${pin_memory} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${data}/dataset/eval1_${datasize}_${unit}${wp_type}${vocab}.tsv \
