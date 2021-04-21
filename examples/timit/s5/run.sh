@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -14,6 +14,7 @@ benchmark=true
 deterministic=false
 stdout=false
 wandb_id=""
+corpus=timit
 
 #########################
 # ASR configuration
@@ -21,13 +22,13 @@ wandb_id=""
 conf=conf/blstm_ctc.yaml
 
 ### path to save the model
-model=/n/work2/inaguma/results/timit
+model=/n/work2/inaguma/results/${corpus}
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-export data=/n/work2/inaguma/corpus/timit
+export data=/n/work2/inaguma/corpus/${corpus}
 
 ### path to original data
 TIMITDATATOP=/n/rd21/corpora_1/TIMIT
@@ -39,13 +40,6 @@ TIMITDATATOP=/n/rd21/corpora_1/TIMIT
 set -e
 set -u
 set -o pipefail
-
-if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: ./run.sh --gpu 0" 1>&2
-    exit 1
-fi
-n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 
 train_set=train
 dev_set=dev
@@ -122,14 +116,23 @@ fi
 
 # NOTE: skip LM training (stage:3)
 
+if [ -z ${gpu} ]; then
+    echo "Error: set GPU number." 1>&2
+    echo "Usage: ./run.sh --gpu 0" 1>&2
+    exit 1
+fi
+n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
+
 mkdir -p ${model}
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
 
-    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
-        --corpus timit \
+    export OMP_NUM_THREADS=${n_gpus}
+    CUDA_VISIBLE_DEVICES=${gpu} python -m torch.distributed.launch --nproc_per_node=${n_gpus} --nnodes=1 --node_rank=0 \
+        ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py --local_world_size=${n_gpus} \
+        --corpus ${corpus} \
         --use_wandb ${use_wandb} \
         --config ${conf} \
         --n_gpus ${n_gpus} \

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -12,9 +12,11 @@ stop_stage=5
 gpu=
 benchmark=true
 deterministic=false
+pin_memory=false
 speed_perturb=false
 stdout=false
 wandb_id=""
+corpus=librispeech
 
 ### vocabulary
 unit=wp           # word/wp/word_char
@@ -33,13 +35,13 @@ asr_init=
 
 
 ### path to save the model
-model=/n/work2/inaguma/results/librispeech
+model=/n/work2/inaguma/results/${corpus}
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-export data=/n/work2/inaguma/corpus/librispeech
+export data=/n/work2/inaguma/corpus/${corpus}
 
 ### path to download data
 data_download_path=/n/rd21/corpora_7/librispeech/
@@ -56,23 +58,6 @@ use_external_text=true
 set -e
 set -u
 set -o pipefail
-
-if [ ${speed_perturb} = true ]; then
-  if [ -z ${conf2} ]; then
-    echo "Error: Set --conf2." 1>&2
-    exit 1
-  fi
-fi
-
-if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: ./run.sh --gpu 0" 1>&2
-    exit 1
-fi
-n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
-if [ ${n_gpus} != 1 ]; then
-    export OMP_NUM_THREADS=${n_gpus}
-fi
 
 train_set=train_${datasize}
 dev_set=dev_other
@@ -281,21 +266,30 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     touch ${data}/.done_stage_2_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}_sp${speed_perturb} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
+if [ -z ${gpu} ]; then
+    echo "Error: set GPU number." 1>&2
+    echo "Usage: ./run.sh --gpu 0" 1>&2
+    exit 1
+fi
+n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
+
 mkdir -p ${model}
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
 
-    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
-        --dist-url 'tcp://127.0.0.1:1623' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 \
-        --corpus librispeech \
+    export OMP_NUM_THREADS=${n_gpus}
+    CUDA_VISIBLE_DEVICES=${gpu} python -m torch.distributed.launch --nproc_per_node=${n_gpus} --nnodes=1 --node_rank=0 \
+        ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py --local_world_size=${n_gpus} \
+        --corpus ${corpus} \
         --use_wandb ${use_wandb} \
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
         --cudnn_deterministic ${deterministic} \
+        --pin_memory ${pin_memory} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \

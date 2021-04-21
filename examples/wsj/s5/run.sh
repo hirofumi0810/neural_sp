@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -15,6 +15,7 @@ deterministic=false
 speed_perturb=true
 stdout=false
 wandb_id=""
+corpus=wsj
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char
@@ -28,8 +29,6 @@ conf=conf/asr/blstm_las.yaml
 conf2=
 asr_init=
 external_lm=
-teacher=
-teacher_lm=
 
 #########################
 # LM configuration
@@ -37,14 +36,14 @@ teacher_lm=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/work2/inaguma/results/wsj
+model=/n/work2/inaguma/results/${corpus}
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/work2/inaguma/corpus/wsj
+export data=/n/work2/inaguma/corpus/${corpus}
 
 ### path to original data
 wsj0=/n/work2/inaguma/corpus/csr_1_senn
@@ -68,20 +67,6 @@ datasize=si284  # si284 or si84
 set -e
 set -u
 set -o pipefail
-
-if [ ${speed_perturb} = true ]; then
-  if [ -z ${conf2} ]; then
-    echo "Error: Set --conf2." 1>&2
-    exit 1
-  fi
-fi
-
-if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: ./run.sh --gpu 0" 1>&2
-    exit 1
-fi
-n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 
 train_set=train_${datasize}
 dev_set=test_dev93
@@ -223,6 +208,13 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     touch ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
+if [ -z ${gpu} ]; then
+    echo "Error: set GPU number." 1>&2
+    echo "Usage: ./run.sh --gpu 0" 1>&2
+    exit 1
+fi
+n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
+
 mkdir -p ${model}
 if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]; then
     echo ============================================================================
@@ -245,8 +237,10 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]
         touch ${data}/.done_stage_3_${datasize}_${unit}${wp_type}${vocab} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
-        --corpus wsj \
+    export OMP_NUM_THREADS=${n_gpus}
+    CUDA_VISIBLE_DEVICES=${gpu} python -m torch.distributed.launch --nproc_per_node=${n_gpus} --nnodes=1 --node_rank=0 \
+        ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py --local_world_size=${n_gpus} \
+        --corpus ${corpus} \
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
@@ -269,8 +263,10 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
 
-    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
-        --corpus wsj \
+    export OMP_NUM_THREADS=${n_gpus}
+    CUDA_VISIBLE_DEVICES=${gpu} python -m torch.distributed.launch --nproc_per_node=${n_gpus} --nnodes=1 --node_rank=0 \
+        ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py --local_world_size=${n_gpus} \
+        --corpus ${corpus} \
         --use_wandb ${use_wandb} \
         --config ${conf} \
         --config2 ${conf2} \
@@ -287,8 +283,6 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --model_save_dir ${model}/asr \
         --asr_init ${asr_init} \
         --external_lm ${external_lm} \
-        --teacher ${teacher} \
-        --teacher_lm ${teacher_lm} \
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 

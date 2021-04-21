@@ -1,10 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 echo ============================================================================
-echo "                                 TEDLIUM3                                 "
+echo "                                 TEDLIUM3                                  "
 echo ============================================================================
 
 # NOTE: speed perturbation is adopted by default
@@ -14,8 +14,10 @@ stop_stage=5
 gpu=
 benchmark=true
 deterministic=false
+pin_memory=false
 stdout=false
 wandb_id=""
+corpus=tedlium3
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char
@@ -36,14 +38,14 @@ external_lm=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/work2/inaguma/results/tedlium3
+model=/n/work2/inaguma/results/${corpus}
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/work2/inaguma/corpus/tedlium3
+export data=/n/work2/inaguma/corpus/${corpus}
 
 ### path to original data
 export db=/n/rd21/corpora_7/tedlium
@@ -55,13 +57,6 @@ export db=/n/rd21/corpora_7/tedlium
 set -e
 set -u
 set -o pipefail
-
-if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: ./run.sh --gpu 0" 1>&2
-    exit 1
-fi
-n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 
 train_set=train_sp
 dev_set=dev_sp
@@ -173,6 +168,13 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     touch ${data}/.done_stage_2_${unit}${wp_type}${vocab}_sptrue && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
+if [ -z ${gpu} ]; then
+    echo "Error: set GPU number." 1>&2
+    echo "Usage: ./run.sh --gpu 0" 1>&2
+    exit 1
+fi
+n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
+
 mkdir -p ${model}
 if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo ============================================================================
@@ -197,8 +199,10 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
         touch ${data}/.done_stage_3_${unit}${wp_type}${vocab} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
-        --corpus tedlium3 \
+    export OMP_NUM_THREADS=${n_gpus}
+    CUDA_VISIBLE_DEVICES=${gpu} python -m torch.distributed.launch --nproc_per_node=${n_gpus} --nnodes=1 --node_rank=0 \
+        ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py --local_world_size=${n_gpus} \
+        --corpus ${corpus} \
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
@@ -221,14 +225,17 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
 
-    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
-        --corpus tedlium3 \
+    export OMP_NUM_THREADS=${n_gpus}
+    CUDA_VISIBLE_DEVICES=${gpu} python -m torch.distributed.launch --nproc_per_node=${n_gpus} --nnodes=1 --node_rank=0 \
+        ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py --local_world_size=${n_gpus} \
+        --corpus ${corpus} \
         --use_wandb ${use_wandb} \
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
         --cudnn_deterministic ${deterministic} \
+        --pin_memory ${pin_memory} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${data}/dataset/${test_set}_${unit}${wp_type}${vocab}.tsv \
