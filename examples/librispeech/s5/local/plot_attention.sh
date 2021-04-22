@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -11,6 +11,7 @@ model_bwd=
 gpu=
 stdout=false
 n_threads=1
+eval_set="test_other"
 
 ### path to save preproecssed data
 data=/n/work2/inaguma/corpus/librispeech
@@ -37,6 +38,7 @@ asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=10  # for Transformer
 oracle=false
+longform_max_n_frames=0
 mma_delay_threshold=-1
 
 . ./cmd.sh
@@ -55,7 +57,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev_clean dev_other test_clean test_other; do
+for set in ${eval_set}; do
     recog_dir=$(dirname ${model})/plot_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
@@ -86,6 +88,9 @@ for set in dev_clean dev_other test_clean test_other; do
     fi
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
+    fi
+    if [ ${longform_max_n_frames} != 0 ]; then
+        recog_dir=${recog_dir}_longform${longform_max_n_frames}
     fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
@@ -152,6 +157,7 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_longform_max_n_frames ${longform_max_n_frames} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_mma_delay_threshold ${mma_delay_threshold} \

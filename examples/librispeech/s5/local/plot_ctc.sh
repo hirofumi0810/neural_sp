@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -10,6 +10,7 @@ model3=
 gpu=
 stdout=false
 n_threads=1
+eval_set="test_other"
 
 ### path to save preproecssed data
 data=/n/work2/inaguma/corpus/librispeech
@@ -34,7 +35,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev_clean dev_other test_clean test_other; do
+for set in ${eval_set}; do
     recog_dir=$(dirname ${model})/plot_${set}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}

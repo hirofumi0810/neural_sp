@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -16,6 +16,7 @@ cache_theta=0.1
 cache_lambda=0.1
 mem_len=0  # for TransformerXL
 n_average=1  # for Transformer
+eval_set="dev_clean dev_other test_clean test_other"
 
 . ./cmd.sh
 . ./path.sh
@@ -33,7 +34,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev_clean dev_other test_clean test_other; do
+for set in ${eval_set}; do
     recog_dir=$(dirname ${model})/decode_${set}
     if [ ${n_caches} != 0 ]; then
         recog_dir=${recog_dir}_cache${n_caches}_theta${cache_theta}_lambda${cache_lambda}
