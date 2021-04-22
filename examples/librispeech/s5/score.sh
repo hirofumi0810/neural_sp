@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -11,6 +11,7 @@ model_bwd=
 gpu=
 stdout=false
 n_threads=1
+eval_set="dev_clean dev_other test_clean test_other"
 
 ### path to save preproecssed data
 data=/n/work2/inaguma/corpus/librispeech
@@ -22,7 +23,7 @@ beam_width=10
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
-length_norm=false
+length_norm=true  ###
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
@@ -48,6 +49,9 @@ block_sync=false
 block_size=40
 mma_delay_threshold=-1  # for MMA
 rnnt_beam_search_type=time_sync  # RNN-T
+blank_threshold=40  # 400ms
+spike_threshold=0.1
+n_accum_frames=1600  # 16s
 
 . ./cmd.sh
 . ./path.sh
@@ -65,7 +69,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev_clean dev_other test_clean test_other; do
+for set in ${eval_set}; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
@@ -185,14 +189,17 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_n_average ${n_average} \
+        --recog_oracle ${oracle} \
         --recog_longform_max_n_frames ${longform_max_n_frames} \
         --recog_streaming_encoding ${streaming_encoding} \
         --recog_block_sync ${block_sync} \
         --recog_block_sync_size ${block_size} \
-        --recog_n_average ${n_average} \
-        --recog_oracle ${oracle} \
         --recog_mma_delay_threshold ${mma_delay_threshold} \
         --recog_rnnt_beam_search_type ${rnnt_beam_search_type} \
+        --recog_ctc_vad_blank_threshold ${blank_threshold} \
+        --recog_ctc_vad_spike_threshold ${spike_threshold} \
+        --recog_ctc_vad_n_accum_frames ${n_accum_frames} \
         --recog_stdout ${stdout} || exit 1;
 
     grep RTF ${recog_dir}/decode.log
