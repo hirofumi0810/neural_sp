@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -38,7 +38,6 @@ CSJVER=dvd  ## Set your CSJ format (dvd or usb).
 
 ### data size
 datasize=all
-lm_datasize=all  # default is the same data as ASR
 # NOTE: aps_other=default using "Academic lecture" and "other" data,
 #       aps=using "Academic lecture" data,
 #       sps=using "Academic lecture" data,
