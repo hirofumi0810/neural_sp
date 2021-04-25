@@ -8,6 +8,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import np2tensor
+
 
 class MBR(torch.autograd.Function):
     """Minimum Bayes Risk (MBR) training.
@@ -26,7 +29,7 @@ class MBR(torch.autograd.Function):
             exp_risk (FloatTensor): `[1]` (for forward)
             grad_input (FloatTensor): `[1]` (for backward)
         Returns:
-            loss (FloatTensor): `[1]`
+            exp_risk (FloatTensor): `[1]`
 
         """
         ctx.save_for_backward(grad_input)
@@ -50,7 +53,7 @@ def cross_entropy_lsm(logits, ys, lsm_prob, ignore_index, training,
         ignore_index (int): index for padding
         normalize_length (bool): normalize XE loss by target sequence length
     Returns:
-        loss_mean (FloatTensor): `[1]`
+        loss (FloatTensor): `[1]`
         ppl (float): perplexity
 
     """
@@ -83,7 +86,7 @@ def cross_entropy_lsm(logits, ys, lsm_prob, ignore_index, training,
     return loss, ppl
 
 
-def distillation(logits_student, logits_teacher, ylens, temperature=5.0):
+def distillation(logits_student, logits_teacher, ylens, temperature=1.0):
     """Compute cross entropy loss for knowledge distillation of sequence-to-sequence models.
 
     Args:
@@ -100,7 +103,7 @@ def distillation(logits_student, logits_teacher, ylens, temperature=5.0):
     log_probs_student = torch.log_softmax(logits_student, dim=-1)
     probs_teacher = torch.softmax(logits_teacher / temperature, dim=-1).data
     loss = -torch.mul(probs_teacher, log_probs_student)
-    loss_mean = np.sum([loss[b, :ylens[b], :].sum() for b in range(bs)]) / ylens.sum()
+    loss_mean = sum([loss[b, :ylens[b], :].sum() for b in range(bs)]) / ylens.sum()
     return loss_mean
 
 
@@ -120,8 +123,7 @@ def kldiv_lsm_ctc(logits, ylens):
     probs = torch.softmax(logits, dim=-1)
     log_probs = torch.log_softmax(logits, dim=-1)
     loss = torch.mul(probs, log_probs - log_uniform)
-    loss_mean = np.sum([loss[b, :ylens[b], :].sum() for b in range(bs)]) / ylens.sum()
-    # assert loss_mean >= 0
+    loss_mean = sum([loss[b, :ylens[b], :].sum() for b in range(bs)]) / ylens.sum()
     return loss_mean
 
 
@@ -143,5 +145,5 @@ def focal_loss(logits, ys, ylens, alpha, gamma):
     log_probs = torch.log_softmax(logits, dim=-1)
     probs_inv = -torch.softmax(logits, dim=-1) + 1
     loss = -alpha * torch.mul(torch.pow(probs_inv, gamma), log_probs)
-    loss_mean = np.sum([loss[b, :ylens[b], :].sum() for b in range(bs)]) / ylens.sum()
+    loss_mean = sum([loss[b, :ylens[b], :].sum() for b in range(bs)]) / ylens.sum()
     return loss_mean
