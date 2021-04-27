@@ -4,7 +4,7 @@ PYTHON :=
 # The python version installed in the conda setup
 PYTHON_VERSION := 3.7
 CUDA_VERSION := 10.1
-PYTORCH_VERSION := 1.0.0
+PYTORCH_VERSION := 1.7.1
 # Use a prebuild Kaldi to omit the installation
 KALDI :=
 
@@ -13,8 +13,31 @@ CONDA_URL := https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.
 # PyTorch>=1.0.0 requires gcc>=4.9 when buliding the extensions
 GCC_VERSION := $(shell gcc -dumpversion)
 
-CONDA_PYTORCH := pytorch=$(PYTORCH_VERSION) cudatoolkit=$(CUDA_VERSION)
-CUDA_DEPS := cupy.done
+USE_PIP := 1
+
+ifeq ($(shell which nvcc),) # 'nvcc' not found
+CPU_ONLY := 0
+else
+CPU_ONLY :=
+endif
+
+ifeq ($(strip $(CPU_ONLY)),)
+# Derive CUDA version from nvcc
+CUDA_VERSION = $(shell nvcc --version | grep "Cuda compilation tools" | cut -d" " -f5 | sed s/,//)
+CUDA_VERSION_WITHOUT_DOT = $(strip $(subst .,,$(CUDA_VERSION)))
+PIP_PYTORCH := torch==$(TH_VERSION) -f https://download.pytorch.org/whl/cu$(CUDA_VERSION_WITHOUT_DOT)/torch_stable.html
+ifeq ($(strip $(CUDA_VERSION_WITHOUT_DOT)),80)
+CONDA_PYTORCH := pytorch=$(TH_VERSION) cuda$(CUDA_VERSION_WITHOUT_DOT) -c pytorch
+else ifeq ($(strip $(CUDA_VERSION_WITHOUT_DOT)),111)
+CONDA_PYTORCH := pytorch=$(TH_VERSION) cudatoolkit=$(CUDA_VERSION) -c pytorch -c conda-forge
+else
+CONDA_PYTORCH := pytorch=$(TH_VERSION) cudatoolkit=$(CUDA_VERSION) -c pytorch
+endif
+
+else
+CONDA_PYTORCH := pytorch=$(TH_VERSION) cpuonly -c pytorch
+PIP_PYTORCH := torch==$(TH_VERSION) -f https://download.pytorch.org/whl/cpu/torch_stable.html
+endif
 
 # Path to save tools (default: current directory)
 TOOL :=
@@ -36,7 +59,6 @@ miniconda.done:
 	test -f $(TOOL)/miniconda.sh || wget $(CONDA_URL) -O $(TOOL)/miniconda.sh
 	test -d $(CONDA) || bash $(TOOL)/miniconda.sh -b -p $(CONDA)
 	. $(CONDA)/bin/activate && conda config --show
-	. $(CONDA)/bin/activate && conda update -y conda
 	. $(CONDA)/bin/activate && conda install -y python=$(PYTHON_VERSION)
 	. $(CONDA)/bin/activate && conda install -y pip setuptools
 	. $(CONDA)/bin/activate && conda info -a
@@ -61,10 +83,14 @@ neural_sp.done:
 	. $(CONDA)/bin/activate; pip list
 	. $(CONDA)/bin/activate; pip install pip --upgrade
 	. $(CONDA)/bin/activate; pip install numpy --upgrade
-	. $(CONDA)/bin/activate; pip install torch==$(PYTORCH_VERSION)
+	if $(USE_PIP); then
+		. $(CONDA)/bin/activate; pip3 install $(PIP_PYTORCH)
+	else
+		. $(CONDA)/bin/activate && conda install -y $(CONDA_PYTORCH)
+	fi
 	. $(CONDA)/bin/activate; pip install -e ..  # setup.py
-	. $(CONDA)/bin/activate && conda install -y $(CONDA_PYTORCH) -c pytorch
 	. $(CONDA)/bin/activate; pip list
+	ln -s $(TOOL) ./neural_sp
 	touch neural_sp.done
 
 # warp-ctc
