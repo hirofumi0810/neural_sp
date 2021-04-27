@@ -67,7 +67,7 @@ miniconda.done:
 # kaldi
 ifneq ($(strip $(KALDI)),)
 kaldi.done:
-	ln -s $(abspath $(KALDI)) ./kaldi
+	if [ ! -d $(TOOL)/kaldi ]; then ln -s $(abspath $(KALDI)) $(TOOL)/kaldi; fi
 	touch kaldi.done
 else
 kaldi.done:

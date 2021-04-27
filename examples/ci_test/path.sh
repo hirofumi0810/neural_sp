@@ -1,4 +1,4 @@
-export NEURALSP_ROOT=$PWD/../../..
+export NEURALSP_ROOT=$PWD/../..
 export KALDI_ROOT=$NEURALSP_ROOT/tools/kaldi
 export TOOL=$NEURALSP_ROOT/tools/neural_sp
 export CONDA=$TOOL/miniconda
