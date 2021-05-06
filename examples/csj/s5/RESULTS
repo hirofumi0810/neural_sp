@@ -1,4 +1,0 @@
-                                                            |         no LM         |         RNNLM         |
-                                                            | eval1 | eval2 | eval3 | eval1 | eval2 | eval3 |
-BPE10k attention                                            | 8.6   | 6.1   | 6.5   | 7.9   | 5.8   | 6.4   |
-BPE10k attention + char CTC init. + add 1L                  | 6.8   | 5.2   | 5.8   | 6.5   | 5.1   | 5.6   |

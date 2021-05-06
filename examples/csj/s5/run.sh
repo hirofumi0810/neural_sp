@@ -26,7 +26,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 #########################
 # ASR configuration
 #########################
-conf=conf/asr/blstm_las.yaml
+conf=conf/asr/transformer/conformer_kernel15_clamp10_hie_subsample8_las_ln.yaml
 conf2=
 asr_init=
 external_lm=

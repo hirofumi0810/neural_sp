@@ -25,6 +25,7 @@ make KALDI=/path/to/kaldi
 ### Corpus
   - ASR
     - AISHELL-1
+    - AMI
     - CSJ
     - Librispeech
     - Switchboard (+ Fisher)
@@ -121,6 +122,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### CSJ (WER)
 | Model          | eval1 | eval2 | eval3 |
 | -------------- | ----- | ----- | ----- |
+| Conformer LAS  | 5.7   | 4.4   | 4.9   |
 | BLSTM LAS      | 6.5   | 5.1   | 5.6   |
 | LC-BLSTM MoChA | 7.4   | 5.6   | 6.4   |
 
