@@ -30,7 +30,7 @@ vocab_sub1=
 #########################
 # ASR configuration
 #########################
-conf=conf/asr/blstm_las_2mtl.yaml
+conf=conf/asr/las/blstm_las_2mtl.yaml
 conf2=
 asr_init=
 

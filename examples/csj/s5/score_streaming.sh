@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -7,6 +7,7 @@ model=
 gpu=
 stdout=false
 n_threads=2
+eval_set="dev_streaming eval1_streaming eval2_streaming eval3_streaming"
 
 ### path to save preproecssed data
 data=/n/work2/inaguma/corpus/csj
@@ -28,18 +29,19 @@ lm_second=
 lm_weight=0.3
 lm_second_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
+softmax_smoothing=1.0
 resolving_unk=false
 asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=10  # for Transformer
 oracle=false
-block_sync=true  # for MoChA
-block_size=20  # for MoChA
+block_sync=true
+block_size=40
 
 # for streaming
-blank_threshold=40
+blank_threshold=40  # 400ms
 spike_threshold=0.1
-n_accum_frames=1600 # 16s
+n_accum_frames=1600  # 16s
 
 . ./cmd.sh
 . ./path.sh
@@ -57,7 +59,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev_all_streaming eval1_streaming eval2_streaming eval3_streaming; do
+for set in ${eval_set}; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
@@ -76,6 +78,9 @@ for set in dev_all_streaming eval1_streaming eval2_streaming eval3_streaming; do
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
+    fi
+    if [ ${softmax_smoothing} != 1.0 ]; then
+        recog_dir=${recog_dir}_smooth${softmax_smoothing}
     fi
     if [ ${gnmt_decoding} = true ]; then
         recog_dir=${recog_dir}_gnmt
@@ -141,6 +146,7 @@ for set in dev_all_streaming eval1_streaming eval2_streaming eval3_streaming; do
         --recog_lm_weight ${lm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
         --recog_ctc_weight ${ctc_weight} \
+        --recog_softmax_smoothing ${softmax_smoothing} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
