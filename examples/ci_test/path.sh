@@ -1,7 +1,7 @@
 export NEURALSP_ROOT=$PWD/../..
+export KALDI_ROOT=$NEURALSP_ROOT/tools/kaldi
 export TOOL=$NEURALSP_ROOT/tools/neural_sp
 export CONDA=$TOOL/miniconda
-export KALDI_ROOT=$TOOL/kaldi
 
 # Kaldi
 [ -f $KALDI_ROOT/tools/env.sh ] && . $KALDI_ROOT/tools/env.sh
