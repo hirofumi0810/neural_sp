@@ -35,8 +35,6 @@ random.seed(1)
 
 logger = logging.getLogger(__name__)
 
-torch_12_plus = LooseVersion("1.3") > LooseVersion(torch.__version__) >= LooseVersion("1.2")
-
 
 class TransformerDecoder(DecoderBase):
     """Transformer decoder.
@@ -400,8 +398,6 @@ class TransformerDecoder(DecoderBase):
         bs, ymax = ys_in.size()[:2]
         tgt_mask = (ys_out != self.pad).unsqueeze(1).repeat([1, ymax, 1])
         causal_mask = tgt_mask.new_ones(ymax, ymax, dtype=tgt_mask.dtype)
-        if torch_12_plus:
-            causal_mask = causal_mask.byte()
         causal_mask = torch.tril(causal_mask).unsqueeze(0)
         tgt_mask = tgt_mask & causal_mask  # `[B, L (query), L (key)]`
 
@@ -495,8 +491,6 @@ class TransformerDecoder(DecoderBase):
         ymax = math.ceil(xmax * max_len_ratio)
         for i in range(ymax):
             causal_mask = eouts.new_ones(i + 1, i + 1, dtype=torch.uint8)
-            if torch_12_plus:
-                causal_mask = causal_mask.byte()
             causal_mask = torch.tril(causal_mask).unsqueeze(0).repeat([bs, 1, 1])
 
             new_cache = [None] * self.n_layers
@@ -714,8 +708,6 @@ class TransformerDecoder(DecoderBase):
 
                 # for the main model
                 causal_mask = eouts.new_ones(i + 1, i + 1, dtype=torch.uint8)
-                if torch_12_plus:
-                    causal_mask = causal_mask.byte()
                 causal_mask = torch.tril(causal_mask).unsqueeze(0).repeat([ys.size(0), 1, 1])
 
                 out = self.pos_enc(self.embed_token_id(ys), scale=True)  # scaled + dropout
