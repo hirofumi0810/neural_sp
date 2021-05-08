@@ -8,9 +8,7 @@ language: python
 os: linux
 
 python:
-  - "3.6"
   - "3.7"
-  # - "3.8"
 
 cache:
   - pip
@@ -30,7 +28,13 @@ after_success:
 
 env:
   - PYTORCH_VERSION=1.0.0 CC=gcc-7 CXX=g++-7
+  - PYTORCH_VERSION=1.1.0 CC=gcc-7 CXX=g++-7
+  - PYTORCH_VERSION=1.3.0 CC=gcc-7 CXX=g++-7
+  - PYTORCH_VERSION=1.4.0 CC=gcc-7 CXX=g++-7
+  - PYTORCH_VERSION=1.5.0 CC=gcc-7 CXX=g++-7
   - PYTORCH_VERSION=1.6.0 CC=gcc-7 CXX=g++-7
+  - PYTORCH_VERSION=1.7.1 CC=gcc-7 CXX=g++-7
+  - PYTORCH_VERSION=1.8.1 CC=gcc-7 CXX=g++-7
 
 addons:
   apt:

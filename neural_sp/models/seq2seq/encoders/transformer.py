@@ -36,8 +36,6 @@ random.seed(1)
 
 logger = logging.getLogger(__name__)
 
-torch_12_plus = LooseVersion("1.3") > LooseVersion(torch.__version__) >= LooseVersion("1.2")
-
 
 class TransformerEncoder(EncoderBase):
     """Transformer encoder.
@@ -682,8 +680,6 @@ def causal(xx_mask, lookahead):
 
     """
     causal_mask = xx_mask.new_ones(xx_mask.size(1), xx_mask.size(1), dtype=xx_mask.dtype)
-    if torch_12_plus:
-        causal_mask = causal_mask.byte()
     causal_mask = torch.tril(causal_mask, diagonal=lookahead, out=causal_mask).unsqueeze(0)
     xx_mask = xx_mask & causal_mask  # `[B, L (query), L (key)]`
     return xx_mask
