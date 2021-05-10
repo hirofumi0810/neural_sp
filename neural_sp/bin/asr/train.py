@@ -445,7 +445,7 @@ def train_one_epoch(model, train_set, dev_set, eval_sets,
                     scheduler.step(skip_optimizer=True)  # update lr only
                 else:
                     scheduler.step()
-                scheduler.zero_grad()
+                scheduler.zero_grad(set_to_none=True)
                 _accum_n_steps = 0
                 reporter.add_scalar('train/total_loss', loss_train)
                 # NOTE: parameters are forcibly updated at the end of every epoch

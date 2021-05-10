@@ -3,6 +3,7 @@
 
 """Learning rate scheduler."""
 
+from distutils.version import LooseVersion
 from glob import glob
 import logging
 import os
@@ -11,6 +12,8 @@ import torch
 from neural_sp.trainers.optimizer import set_optimizer
 
 logger = logging.getLogger(__name__)
+
+torch_17_plus = LooseVersion(torch.__version__) >= LooseVersion("1.7")
 
 
 class LRScheduler(object):
@@ -105,8 +108,11 @@ class LRScheduler(object):
         else:
             self._warmup_lr()
 
-    def zero_grad(self):
-        self.optimizer.zero_grad()
+    def zero_grad(self, set_to_none=False):
+        if torch_17_plus:
+            self.optimizer.zero_grad(set_to_none=set_to_none)
+        else:
+            self.optimizer.zero_grad()
 
     def _noam_lr(self):
         """Warm up and decay learning rate per step based on Transformer."""

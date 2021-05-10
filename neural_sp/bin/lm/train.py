@@ -6,7 +6,6 @@
 
 """Train LM."""
 
-import cProfile
 from distutils.version import LooseVersion
 import logging
 import os
@@ -15,7 +14,6 @@ import shutil
 import sys
 import time
 import torch
-import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
@@ -41,7 +39,6 @@ from neural_sp.trainers.lr_scheduler import LRScheduler
 from neural_sp.trainers.optimizer import set_optimizer
 from neural_sp.trainers.reporter import Reporter
 from neural_sp.utils import mkdir_join
-
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +172,7 @@ def main(args):
         if args.distributed:
             model = DDP(model, device_ids=device_ids)
         else:
-            model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
+            model = CustomDataParallel(model, device_ids=list(range(args.n_gpus)))
     else:
         model = CPUWrapperLM(model)
 
@@ -323,7 +320,7 @@ def train_one_epoch(model, train_set, dev_set,
                 scheduler.step(skip_optimizer=True)  # update lr only
             else:
                 scheduler.step()
-            scheduler.zero_grad()
+            scheduler.zero_grad(set_to_none=True)
             _accum_n_steps = 0
             reporter.add_scalar('train/total_loss', loss_train)
             # NOTE: parameters are forcibly updated at the end of every epoch
