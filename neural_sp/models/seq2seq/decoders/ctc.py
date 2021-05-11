@@ -95,7 +95,10 @@ class CTC(DecoderBase):
             import warpctc_pytorch
             self.ctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
         else:
-            self.ctc_loss = nn.CTCLoss(reduction="sum")
+            if LooseVersion(torch.__version__) < LooseVersion("1.7.0"):
+                self.ctc_loss = nn.CTCLoss(reduction="sum")
+            else:
+                self.ctc_loss = nn.CTCLoss(reduction="sum", zero_infinity=True)
 
         self.forced_aligner = CTCForcedAligner()
 
