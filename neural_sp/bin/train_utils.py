@@ -141,7 +141,7 @@ def load_checkpoint(checkpoint_path, model=None, scheduler=None, amp=None):
 
     """
     if os.path.isfile(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
+        checkpoint = torch.load(checkpoint_path, map_location='cpu')
     else:
         raise ValueError("No checkpoint found at %s" % checkpoint_path)
 
@@ -156,7 +156,7 @@ def load_checkpoint(checkpoint_path, model=None, scheduler=None, amp=None):
 
     # Restore scheduler/optimizer
     if scheduler is not None:
-        scheduler.load_state_dict(checkpoint['optimizer_state_dict'], model.use_cuda)
+        scheduler.load_state_dict(checkpoint['optimizer_state_dict'])
         # NOTE: fix this later
         scheduler.optimizer.param_groups[0]['params'] = []
         for param_group in list(model.parameters()):

@@ -235,22 +235,23 @@ class LRScheduler(object):
         dict['optimizer_state_dict'] = self.optimizer.state_dict()
         return dict
 
-    def load_state_dict(self, state_dict, use_cuda):
+    def load_state_dict(self, state_dict):
         """Load scheduler's state.
 
         Arguments:
             state_dict (dict): scheduler state. Should be an object returned
                 from a call to :meth:`state_dict`.
-            use_cuda (bool): GPU mode
 
         """
         self.__dict__.update({k: v for k, v in state_dict.items() if k != 'optimizer_state_dict'})
         self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
-        # https://discuss.pytorch.org/t/loading-a-saved-model-for-continue-training/17244/4
+
+    def cuda(self, device_id):
+        # see https://discuss.pytorch.org/t/loading-a-saved-model-for-continue-training/17244/4
         for state in self.optimizer.state.values():
             for k, v in state.items():
-                if use_cuda and isinstance(v, torch.Tensor):
-                    state[k] = v.cuda()
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.cuda(device_id)
 
     def convert_to_sgd(self, model, lr, weight_decay, decay_type, decay_rate):
         self.lr = lr
