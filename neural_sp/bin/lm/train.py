@@ -52,7 +52,7 @@ def main(args):
     if args.resume:
         conf = load_config(os.path.join(os.path.dirname(args.resume), 'conf.yml'))
         for k, v in conf.items():
-            if k != 'resume':
+            if k not in ['resume', 'local_rank']:
                 setattr(args, k, v)
 
     # Load dataset
@@ -169,6 +169,7 @@ def main(args):
 
         torch.cuda.set_device(device_ids[0])
         model.cuda(device_ids[0])
+        scheduler.cuda(device_ids[0])
         if args.distributed:
             model = DDP(model, device_ids=device_ids)
         else:
@@ -186,7 +187,7 @@ def main(args):
     reporter = Reporter(args, model, args.local_rank)
     args.wandb_id = reporter.wandb_id
     if args.resume:
-        n_steps = scheduler.n_steps * args.accum_grad_n_steps
+        n_steps = scheduler.n_steps * max(1, args.accum_grad_n_steps // args.local_world_size)
         reporter.resume(n_steps, resume_epoch)
 
     # Save conf file as a yaml file

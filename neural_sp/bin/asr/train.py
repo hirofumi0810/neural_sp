@@ -8,7 +8,6 @@
 
 import argparse
 import copy
-import cProfile
 from distutils.version import LooseVersion
 import logging
 import os
@@ -17,7 +16,6 @@ import shutil
 import sys
 import time
 import torch
-import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
@@ -66,7 +64,7 @@ def main(args):
     if args.resume:
         conf = load_config(os.path.join(os.path.dirname(args.resume), 'conf.yml'))
         for k, v in conf.items():
-            if k != 'resume':
+            if k not in ['resume', 'local_rank']:
                 setattr(args, k, v)
 
     args = compute_subsampling_factor(args)
@@ -260,10 +258,11 @@ def main(args):
 
         torch.cuda.set_device(device_ids[0])
         model.cuda(device_ids[0])
+        scheduler.cuda(device_ids[0])
         if args.distributed:
             model = DDP(model, device_ids=device_ids)
         else:
-            model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
+            model = CustomDataParallel(model, device_ids=list(range(args.n_gpus)))
 
         if teacher is not None:
             teacher.cuda()
@@ -282,7 +281,7 @@ def main(args):
     reporter = Reporter(args, model, args.local_rank)
     args.wandb_id = reporter.wandb_id
     if args.resume:
-        n_steps = scheduler.n_steps * args.accum_grad_n_steps
+        n_steps = scheduler.n_steps * max(1, args.accum_grad_n_steps // args.local_world_size)
         reporter.resume(n_steps, resume_epoch)
 
     # Save conf file as a yaml file
