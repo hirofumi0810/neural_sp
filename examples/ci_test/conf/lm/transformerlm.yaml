@@ -1,9 +1,9 @@
 # topology
 lm_type: transformer
-transformer_d_model: 8
-transformer_d_ff: 32
 n_layers: 2
 transformer_pe_type: add
+transformer_d_model: 8
+transformer_d_ff: 32
 transformer_n_heads: 4
 tie_embedding: true
 # optimization

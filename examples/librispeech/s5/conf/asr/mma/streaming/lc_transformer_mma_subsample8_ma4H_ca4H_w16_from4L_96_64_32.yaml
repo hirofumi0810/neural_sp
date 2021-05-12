@@ -38,7 +38,7 @@ transformer_dec_n_heads: 4
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 16
+batch_size: 32
 optimizer: noam
 n_epochs: 40  ### 35->40
 convert_to_sgd_epoch: 100
@@ -50,7 +50,7 @@ shuffle_bucket: true  ### this is important
 sort_stop_epoch: 100
 eval_start_epoch: 1
 warmup_n_steps: 25000
-accum_grad_n_steps: 16
+accum_grad_n_steps: 8
 ### regularization
 clip_grad_norm: 5.0
 dropout_in: 0.0
