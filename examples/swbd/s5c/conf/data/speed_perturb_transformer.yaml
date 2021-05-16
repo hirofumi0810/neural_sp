@@ -1,3 +1,0 @@
-# optimization
-n_epochs: 30  # 40->20
-print_step: 600

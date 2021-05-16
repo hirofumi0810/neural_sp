@@ -7,8 +7,6 @@ conv_channels: "32_32"
 conv_kernel_sizes: "(3,3)_(3,3)"
 conv_strides: "(1,1)_(1,1)"
 conv_poolings: "(1,1)_(2,2)"
-conv_batch_norm: false
-conv_layer_norm: false
 subsample: "1_1_1_2_1_1_1_2_1_1_1_1"
 subsample_type: max_pool
 enc_type: conv_conformer
@@ -34,14 +32,14 @@ emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 10000  # 16GB
-# batch_size: 26000  # 24GB
+# batch_size: 10000  # 12GB
+batch_size: 24000  # 24GB
 batch_size_type: frame
 optimizer: noam
 n_epochs: 30
 convert_to_sgd_epoch: 100
-print_step: 12000  # 16GB
-# print_step: 6000  # 24GB
+# print_step: 12000  # 12GB
+print_step: 6000  # 24GB
 metric: edit_distance
 lr_factor: 5.0
 early_stop_patient_n_epochs: 5
@@ -49,8 +47,8 @@ shuffle_bucket: true  ### this is important
 sort_stop_epoch: 100
 eval_start_epoch: 1
 warmup_n_steps: 25000
-accum_grad_n_steps: 32  # 16GB
-# accum_grad_n_steps: 16  # 24GB
+# accum_grad_n_steps: 32  # 12GB
+accum_grad_n_steps: 16  # 24GB
 ### initialization
 param_init: 0.1
 ### regularization

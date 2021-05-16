@@ -42,7 +42,7 @@ batch_size: 16
 optimizer: noam
 n_epochs: 35
 convert_to_sgd_epoch: 100
-print_step: 1000
+print_step: 2000  ### 1000->2000
 metric: accuracy
 lr_factor: 5.0
 early_stop_patient_n_epochs: 5

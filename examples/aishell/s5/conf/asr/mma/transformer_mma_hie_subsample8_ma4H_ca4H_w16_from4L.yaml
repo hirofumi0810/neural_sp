@@ -7,8 +7,6 @@ conv_channels: "32_32"
 conv_kernel_sizes: "(3,3)_(3,3)"
 conv_strides: "(1,1)_(1,1)"
 conv_poolings: "(1,1)_(2,2)"
-conv_batch_norm: false
-conv_layer_norm: false
 subsample: "1_1_1_2_1_1_1_2_1_1_1_1"
 subsample_type: max_pool
 enc_type: conv_transformer
@@ -27,7 +25,8 @@ mocha_chunk_size: 16  ###
 mocha_init_r: -2.0
 mocha_eps: 1e-6
 mocha_std: 1.0
-mocha_quantity_loss_weight: 0.0
+mocha_quantity_loss_weight: 1.0  ###
+mocha_quantity_loss_start_epoch: 5  ###
 mocha_first_layer: 4  ###
 share_chunkwise_attention: true  ###
 transformer_dec_d_model: 256

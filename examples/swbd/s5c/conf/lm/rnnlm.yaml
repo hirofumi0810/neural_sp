@@ -14,7 +14,7 @@ bptt: 200
 optimizer: adam
 n_epochs: 40
 convert_to_sgd_epoch: 40
-print_step: 50
+print_step: 200
 lr: 1e-3
 lr_decay_start_epoch: 10
 lr_decay_rate: 0.95
