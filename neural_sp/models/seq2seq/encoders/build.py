@@ -6,6 +6,23 @@
 
 def build_encoder(args):
 
+    if 'conv' in args.enc_type:
+        assert args.n_stacks == 1 and args.n_splices == 1
+        from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
+        conv = ConvEncoder(args.input_dim,
+                           in_channel=args.conv_in_channel,
+                           channels=args.conv_channels,
+                           kernel_sizes=args.conv_kernel_sizes,
+                           strides=args.conv_strides,
+                           poolings=args.conv_poolings,
+                           dropout=0.,
+                           normalization=args.conv_normalization,
+                           residual=False,
+                           bottleneck_dim=args.transformer_enc_d_model if 'former' in args.enc_type else args.conv_bottleneck_dim,
+                           param_init=args.param_init)
+    else:
+        conv = None
+
     # safeguard
     if not hasattr(args, 'transformer_enc_d_model') and hasattr(args, 'transformer_d_model'):
         args.transformer_enc_d_model = args.transformer_d_model
@@ -60,15 +77,7 @@ def build_encoder(args):
             subsample_type=args.subsample_type,
             n_stacks=args.n_stacks,
             n_splices=args.n_splices,
-            conv_in_channel=args.conv_in_channel,
-            conv_channels=args.conv_channels,
-            conv_kernel_sizes=args.conv_kernel_sizes,
-            conv_strides=args.conv_strides,
-            conv_poolings=args.conv_poolings,
-            conv_batch_norm=args.conv_batch_norm,
-            conv_layer_norm=args.conv_layer_norm,
-            conv_bottleneck_dim=args.conv_bottleneck_dim,
-            conv_param_init=args.param_init,
+            frontend_conv=conv,
             task_specific_layer=args.task_specific_layer,
             param_init=args.transformer_param_init,
             clamp_len=args.transformer_enc_clamp_len,
@@ -104,15 +113,7 @@ def build_encoder(args):
             subsample_type=args.subsample_type,
             n_stacks=args.n_stacks,
             n_splices=args.n_splices,
-            conv_in_channel=args.conv_in_channel,
-            conv_channels=args.conv_channels,
-            conv_kernel_sizes=args.conv_kernel_sizes,
-            conv_strides=args.conv_strides,
-            conv_poolings=args.conv_poolings,
-            conv_batch_norm=args.conv_batch_norm,
-            conv_layer_norm=args.conv_layer_norm,
-            conv_bottleneck_dim=args.conv_bottleneck_dim,
-            conv_param_init=args.param_init,
+            frontend_conv=conv,
             task_specific_layer=args.task_specific_layer,
             param_init=args.transformer_param_init,
             clamp_len=args.transformer_enc_clamp_len,
@@ -139,14 +140,7 @@ def build_encoder(args):
             subsample_type=args.subsample_type,
             n_stacks=args.n_stacks,
             n_splices=args.n_splices,
-            conv_in_channel=args.conv_in_channel,
-            conv_channels=args.conv_channels,
-            conv_kernel_sizes=args.conv_kernel_sizes,
-            conv_strides=args.conv_strides,
-            conv_poolings=args.conv_poolings,
-            conv_batch_norm=args.conv_batch_norm,
-            conv_layer_norm=args.conv_layer_norm,
-            conv_bottleneck_dim=args.conv_bottleneck_dim,
+            frontend_conv=conv,
             bidir_sum_fwd_bwd=args.bidirectional_sum_fwd_bwd,
             task_specific_layer=args.task_specific_layer,
             param_init=args.param_init,

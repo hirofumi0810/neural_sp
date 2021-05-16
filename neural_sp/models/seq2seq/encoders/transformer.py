@@ -4,7 +4,6 @@
 """Transformer encoder."""
 
 import copy
-from distutils.version import LooseVersion
 import logging
 import math
 import numpy as np
@@ -58,20 +57,12 @@ class TransformerEncoder(EncoderBase):
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
         dropout_layer (float): LayerDrop probability for layers
-        subsample (list): subsample in the corresponding Transformer layers
+        subsample (List): subsample in the corresponding Transformer layers
             ex.) [1, 2, 2, 1] means that subsample is conducted in the 2nd and 3rd layers.
         subsample_type (str): drop/concat/max_pool/1dconv
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
-        conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channels in CNN blocks
-        conv_kernel_sizes (list): size of kernels in CNN blocks
-        conv_strides (list): number of strides in CNN blocks
-        conv_poolings (list): size of poolings in CNN blocks
-        conv_batch_norm (bool): apply batch normalization only in CNN blocks
-        conv_layer_norm (bool): apply layer normalization only in CNN blocks
-        conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and self-attention layers
-        conv_param_init (float): only for CNN layers before Transformer layers
+        frontend_conv (nn.Module): frontend CNN module
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (str): parameter initialization method
         clamp_len (int): maximum length for relative positional encoding
@@ -88,9 +79,7 @@ class TransformerEncoder(EncoderBase):
                  d_model, d_ff, ffn_bottleneck_dim, ffn_activation,
                  pe_type, layer_norm_eps, last_proj_dim,
                  dropout_in, dropout, dropout_att, dropout_layer,
-                 subsample, subsample_type, n_stacks, n_splices,
-                 conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
-                 conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
+                 subsample, subsample_type, n_stacks, n_splices, frontend_conv,
                  task_specific_layer, param_init, clamp_len,
                  lookahead, chunk_size_left, chunk_size_current, chunk_size_right, streaming_type):
 
@@ -178,26 +167,11 @@ class TransformerEncoder(EncoderBase):
         self.aws_dict = {}
         self.data_dict = {}
 
-        # Setting for CNNs
-        if 'conv' in enc_type:
-            assert conv_channels
-            assert n_stacks == 1 and n_splices == 1
-            self.conv = ConvEncoder(input_dim,
-                                    in_channel=conv_in_channel,
-                                    channels=conv_channels,
-                                    kernel_sizes=conv_kernel_sizes,
-                                    strides=conv_strides,
-                                    poolings=conv_poolings,
-                                    dropout=0.,
-                                    batch_norm=conv_batch_norm,
-                                    layer_norm=conv_layer_norm,
-                                    layer_norm_eps=layer_norm_eps,
-                                    residual=False,
-                                    bottleneck_dim=d_model,
-                                    param_init=conv_param_init)
+        # Setting for frontend CNNs
+        self.conv = frontend_conv
+        if self.conv is not None:
             self._odim = self.conv.output_dim
         else:
-            self.conv = None
             self._odim = input_dim * n_splices * n_stacks
             self.embed = nn.Linear(self._odim, d_model)
 

@@ -3,7 +3,6 @@
 
 """CNN encoder."""
 
-from distutils.util import strtobool
 import logging
 import math
 import numpy as np
@@ -22,26 +21,25 @@ class ConvEncoder(EncoderBase):
     Args:
         input_dim (int): dimension of input features (freq * channel)
         in_channel (int): number of channels of input features
-        channels (list): number of channles in CNN blocks
-        kernel_sizes (list): size of kernels in CNN blocks
-        strides (list): strides in CNN blocks
-        poolings (list): size of poolings in CNN blocks
+        channels (str): number of channles in CNN blocks
+        kernel_sizes (str): size of kernels in CNN blocks
+        strides (str): strides in CNN blocks
+        poolings (str): size of poolings in CNN blocks
         dropout (float): probability to drop nodes in hidden-hidden connection
-        batch_norm (bool): apply batch normalization
-        layer_norm (bool): apply layer normalization
+        normalization (str): normalization in CNN blocks
         residual (bool): apply residual connections
         bottleneck_dim (int): dimension of the bridge layer after the last layer
         param_init (float): mean of uniform distribution for parameter initialization
-        layer_norm_eps (float): epsilon value for layer normalization
 
     """
 
     def __init__(self, input_dim, in_channel, channels,
                  kernel_sizes, strides, poolings,
-                 dropout, batch_norm, layer_norm, residual,
-                 bottleneck_dim, param_init, layer_norm_eps=1e-12):
+                 dropout, normalization, residual, bottleneck_dim, param_init):
 
         super(ConvEncoder, self).__init__()
+
+        assert channels
 
         (channels, kernel_sizes, strides, poolings), is_1dconv = parse_cnn_config(
             channels, kernel_sizes, strides, poolings)
@@ -66,9 +64,7 @@ class ConvEncoder(EncoderBase):
                                     stride=strides[lth],  # T
                                     pooling=poolings[lth],  # T
                                     dropout=dropout,
-                                    batch_norm=batch_norm,
-                                    layer_norm=layer_norm,
-                                    layer_norm_eps=layer_norm_eps,
+                                    normalization=normalization,
                                     residual=residual)
             else:
                 block = Conv2dBlock(input_dim=in_freq,
@@ -78,9 +74,7 @@ class ConvEncoder(EncoderBase):
                                     stride=strides[lth],
                                     pooling=poolings[lth],
                                     dropout=dropout,
-                                    batch_norm=batch_norm,
-                                    layer_norm=layer_norm,
-                                    layer_norm_eps=layer_norm_eps,
+                                    normalization=normalization,
                                     residual=residual)
             self.layers += [block]
             in_freq = block.output_dim
@@ -117,10 +111,9 @@ class ConvEncoder(EncoderBase):
                            help='delimited list of strides in each CNN block')
         group.add_argument('--conv_poolings', type=str, default="",
                            help='delimited list of poolings in each CNN block')
-        group.add_argument('--conv_batch_norm', type=strtobool, default=False,
-                           help='apply batch normalization in each CNN block')
-        group.add_argument('--conv_layer_norm', type=strtobool, default=False,
-                           help='apply layer normalization in each CNN block')
+        group.add_argument('--conv_normalization', type=str, default='',
+                           choices=['', 'layer_norm', 'batch_norm'],
+                           help='normalization in each CNN block')
         group.add_argument('--conv_bottleneck_dim', type=int, default=0,
                            help='dimension of the bottleneck layer between CNN and the subsequent RNN/Transformer layers')
         return parser
@@ -132,10 +125,8 @@ class ConvEncoder(EncoderBase):
         if args.conv_channels and len(args.conv_channels.split('_')) > 0:
             tmp = dir_name
             dir_name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
-            if args.conv_batch_norm:
-                dir_name += 'bn'
-            if args.conv_layer_norm:
-                dir_name += 'ln'
+            if args.conv_normalization:
+                dir_name += args.conv_normalization
             dir_name += tmp
         return dir_name
 
@@ -205,12 +196,10 @@ class Conv1dBlock(EncoderBase):
 
     def __init__(self, in_channel, out_channel,
                  kernel_size, stride, pooling,
-                 dropout, batch_norm, layer_norm, layer_norm_eps, residual):
+                 dropout, normalization, residual):
 
         super(Conv1dBlock, self).__init__()
 
-        self.batch_norm = batch_norm
-        self.layer_norm = layer_norm
         self.residual = residual
         self.dropout = nn.Dropout(p=dropout)
 
@@ -221,9 +210,12 @@ class Conv1dBlock(EncoderBase):
                                stride=stride,
                                padding=1)
         self._odim = update_lens_1d(torch.IntTensor([in_channel]), self.conv1)[0].item()
-        self.batch_norm1 = nn.BatchNorm1d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm1 = nn.LayerNorm(out_channel,
-                                        eps=layer_norm_eps) if layer_norm else lambda x: x
+        if normalization == 'batch_norm':
+            self.norm1 = nn.BatchNorm1d(out_channel)
+        elif normalization == 'layer_norm':
+            self.norm1 = nn.LayerNorm(out_channel, eps=1e-12)
+        else:
+            self.norm1 = None
 
         # 2nd layer
         self.conv2 = nn.Conv1d(in_channels=out_channel,
@@ -232,9 +224,12 @@ class Conv1dBlock(EncoderBase):
                                stride=stride,
                                padding=1)
         self._odim = update_lens_1d(torch.IntTensor([self._odim]), self.conv2)[0].item()
-        self.batch_norm2 = nn.BatchNorm1d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm2 = nn.LayerNorm(out_channel,
-                                        eps=layer_norm_eps) if layer_norm else lambda x: x
+        if normalization == 'batch_norm':
+            self.norm2 = nn.BatchNorm1d(out_channel)
+        elif normalization == 'layer_norm':
+            self.norm2 = nn.LayerNorm(out_channel, eps=1e-12)
+        else:
+            self.norm2 = None
 
         # Max Pooling
         self.pool = None
@@ -265,15 +260,15 @@ class Conv1dBlock(EncoderBase):
         residual = xs
 
         xs = self.conv1(xs.transpose(2, 1)).transpose(2, 1)
-        xs = self.batch_norm1(xs)
-        xs = self.layer_norm1(xs)
+        if self.norm1 is not None:
+            xs = self.norm1(xs)
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_1d(xlens, self.conv1)
 
         xs = self.conv2(xs.transpose(2, 1)).transpose(2, 1)
-        xs = self.batch_norm2(xs)
-        xs = self.layer_norm2(xs)
+        if self.norm2 is not None:
+            xs = self.norm2(xs)
         if self.residual and xs.size() == residual.size():
             xs += residual  # NOTE: this is the same place as in ResNet
         xs = torch.relu(xs)
@@ -292,12 +287,10 @@ class Conv2dBlock(EncoderBase):
 
     def __init__(self, input_dim, in_channel, out_channel,
                  kernel_size, stride, pooling,
-                 dropout, batch_norm, layer_norm, layer_norm_eps, residual):
+                 dropout, normalization, residual):
 
         super(Conv2dBlock, self).__init__()
 
-        self.batch_norm = batch_norm
-        self.layer_norm = layer_norm
         self.residual = residual
         self.dropout = nn.Dropout(p=dropout)
         self.time_axis = 0
@@ -309,9 +302,12 @@ class Conv2dBlock(EncoderBase):
                                stride=tuple(stride),
                                padding=(1, 1))
         self._odim = update_lens_2d(torch.IntTensor([input_dim]), self.conv1, dim=1)[0].item()
-        self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm1 = LayerNorm2D(out_channel, self._odim,
-                                       eps=layer_norm_eps) if layer_norm else lambda x: x
+        if normalization == 'batch_norm':
+            self.norm1 = nn.BatchNorm2d(out_channel)
+        elif normalization == 'layer_norm':
+            self.norm1 = LayerNorm2D(out_channel, self._odim, eps=1e-12)
+        else:
+            self.norm1 = None
 
         # 2nd layer
         self.conv2 = nn.Conv2d(in_channels=out_channel,
@@ -320,9 +316,12 @@ class Conv2dBlock(EncoderBase):
                                stride=tuple(stride),
                                padding=(1, 1))
         self._odim = update_lens_2d(torch.IntTensor([self._odim]), self.conv2, dim=1)[0].item()
-        self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm2 = LayerNorm2D(out_channel, self._odim,
-                                       eps=layer_norm_eps) if layer_norm else lambda x: x
+        if normalization == 'batch_norm':
+            self.norm2 = nn.BatchNorm2d(out_channel)
+        elif normalization == 'layer_norm':
+            self.norm2 = LayerNorm2D(out_channel, self._odim, eps=1e-12)
+        else:
+            self.norm2 = None
 
         # Max Pooling
         self.pool = None
@@ -357,8 +356,8 @@ class Conv2dBlock(EncoderBase):
         residual = xs
 
         xs = self.conv1(xs)
-        xs = self.batch_norm1(xs)
-        xs = self.layer_norm1(xs)
+        if self.norm1 is not None:
+            xs = self.norm1(xs)
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv1, dim=0)
@@ -371,8 +370,8 @@ class Conv2dBlock(EncoderBase):
             xlens -= stride
 
         xs = self.conv2(xs)
-        xs = self.batch_norm2(xs)
-        xs = self.layer_norm2(xs)
+        if self.norm2 is not None:
+            xs = self.norm2(xs)
         if self.residual and xs.size() == residual.size():
             xs += residual  # NOTE: this is the same place as in ResNet
         xs = torch.relu(xs)
