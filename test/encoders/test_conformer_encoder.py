@@ -37,15 +37,7 @@ def make_args(**kwargs):
         subsample_type='max_pool',
         n_stacks=1,
         n_splices=1,
-        conv_in_channel=1,
-        conv_channels="32_32",
-        conv_kernel_sizes="(3,3)_(3,3)",
-        conv_strides="(1,1)_(1,1)",
-        conv_poolings="(2,2)_(2,2)",
-        conv_batch_norm=False,
-        conv_layer_norm=False,
-        conv_bottleneck_dim=0,
-        conv_param_init=0.1,
+        frontend_conv=None,
         task_specific_layer=False,
         param_init='xavier_uniform',
         clamp_len=-1,
@@ -59,92 +51,110 @@ def make_args(**kwargs):
     return args
 
 
+def make_args_conv(**kwargs):
+    args = dict(
+        input_dim=80,
+        in_channel=1,
+        channels="32_32",
+        kernel_sizes="(3,3)_(3,3)",
+        strides="(1,1)_(1,1)",
+        poolings="(2,2)_(2,2)",
+        dropout=0.1,
+        normalization='',
+        residual=False,
+        bottleneck_dim=0,
+        param_init=0.1,
+    )
+    args.update(kwargs)
+    return args
+
+
 @pytest.mark.parametrize(
-    "args",
+    "args, args_conv",
     [
         # Conformer type
-        ({'enc_type': 'conformer'}),
-        ({'enc_type': 'conformer_v2'}),
-        ({'enc_type': 'conv_conformer'}),
-        ({'enc_type': 'conv_conformer_v2'}),
-        ({'input_dim': 240, 'conv_in_channel': 3}),
+        ({'enc_type': 'conformer'}, {}),
+        # ({'enc_type': 'conformer_v2'}, {}),
+        ({'enc_type': 'conv_conformer'}, {}),
+        # ({'enc_type': 'conv_conformer_v2'}, {}),
+        ({'input_dim': 240}, {'input_dim': 240, 'in_channel': 3}),
         # PE type
-        ({'pe_type': 'relative_xl'}),
-        ({'pe_type': 'relative', 'clamp_len': 10}),
-        ({'pe_type': 'relative_xl', 'clamp_len': 10}),
+        ({'pe_type': 'relative_xl'}, {}),
+        ({'pe_type': 'relative', 'clamp_len': 10}, {}),
+        ({'pe_type': 'relative_xl', 'clamp_len': 10}, {}),
         # normalization in frontend CNN
-        ({'conv_batch_norm': True}),
-        ({'conv_layer_norm': True}),
+        ({}, {'normalization': 'batch_norm'}),
+        ({}, {'normalization': 'layer_norm'}),
         # normalization in Conformer convolution module
-        ({'normalization': 'group_norm'}),
-        ({'normalization': 'layer_norm'}),
+        ({'normalization': 'group_norm'}, {}),
+        ({'normalization': 'layer_norm'}, {}),
         # projection
-        ({'last_proj_dim': 10}),
+        ({'last_proj_dim': 10}, {}),
         # unidirectional
-        ({'enc_type': 'conv_uni_conformer'}),
-        ({'enc_type': 'conv_uni_conformer_v2'}),
-        ({'enc_type': 'conv_uni_conformer', 'lookahead': "1_1_1"}),
-        ({'enc_type': 'conv_uni_conformer', 'lookahead': "1_0_1"}),
-        ({'enc_type': 'conv_uni_conformer', 'lookahead': "0_1_0"}),
+        ({'enc_type': 'conv_uni_conformer'}, {}),
+        # ({'enc_type': 'conv_uni_conformer_v2'}, {}),
+        ({'enc_type': 'conv_uni_conformer', 'lookahead': "1_1_1"}, {}),
+        ({'enc_type': 'conv_uni_conformer', 'lookahead': "1_0_1"}, {}),
+        ({'enc_type': 'conv_uni_conformer', 'lookahead': "0_1_0"}, {}),
         # LC-Conformer
         ({'streaming_type': 'reshape',
-          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}, {}),
         ({'streaming_type': 'reshape',
-          'chunk_size_left': "64", 'chunk_size_current': "128", 'chunk_size_right': "64"}),
+          'chunk_size_left': "64", 'chunk_size_current': "128", 'chunk_size_right': "64"}, {}),
         ({'streaming_type': 'mask',
-          'chunk_size_left': "64", 'chunk_size_current': "64"}),
+          'chunk_size_left': "64", 'chunk_size_current': "64"}, {}),
         # Multi-task
-        ({'n_layers_sub1': 2}),
-        ({'n_layers_sub1': 2, 'n_layers_sub2': 1}),
-        ({'n_layers_sub1': 2, 'n_layers_sub2': 1, 'last_proj_dim': 10}),
-        ({'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True}),
+        ({'n_layers_sub1': 2}, {}),
+        ({'n_layers_sub1': 2, 'n_layers_sub2': 1}, {}),
+        ({'n_layers_sub1': 2, 'n_layers_sub2': 1, 'last_proj_dim': 10}, {}),
+        ({'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True}, {}),
         ({'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True,
-          'last_proj_dim': 10}),
+          'last_proj_dim': 10}, {}),
         # bottleneck
-        ({'ffn_bottleneck_dim': 16}),
+        ({'ffn_bottleneck_dim': 16}, {}),
         # subsampling
-        ({'subsample': "1_2_1", 'subsample_type': 'drop'}),
-        ({'subsample': "1_2_1", 'subsample_type': 'concat'}),
-        ({'subsample': "1_2_1", 'subsample_type': 'max_pool'}),
-        ({'subsample': "1_2_1", 'subsample_type': '1dconv'}),
-        ({'subsample': "1_2_1", 'subsample_type': 'add'}),
-        ({'subsample': "1_2_1", 'enc_type': 'conv_uni_conformer'}),
+        ({'subsample': "1_2_1", 'subsample_type': 'drop'}, {}),
+        ({'subsample': "1_2_1", 'subsample_type': 'concat'}, {}),
+        ({'subsample': "1_2_1", 'subsample_type': 'max_pool'}, {}),
+        ({'subsample': "1_2_1", 'subsample_type': '1dconv'}, {}),
+        ({'subsample': "1_2_1", 'subsample_type': 'add'}, {}),
+        ({'subsample': "1_2_1", 'enc_type': 'conv_uni_conformer'}, {}),
         ({'subsample': "1_2_1", 'streaming_type': 'reshape',
-          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}, {}),
+        ({'subsample': "2_2_1", 'streaming_type': 'reshape',
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}, {}),
         ({'subsample': "1_2_1", 'streaming_type': 'mask',
-          'chunk_size_left': "64", 'chunk_size_current': "64"}),
+          'chunk_size_left': "64", 'chunk_size_current': "64"}, {}),
+        ({'subsample': "2_2_1", 'streaming_type': 'mask',
+          'chunk_size_left': "64", 'chunk_size_current': "64"}, {}),
         ({'subsample': "1_2_1", 'streaming_type': 'reshape',
-          'conv_poolings': "(1,1)_(2,2)",
-          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}, {'poolings': "(1,1)_(2,2)"}),
+        ({'subsample': "2_2_1", 'streaming_type': 'reshape',
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}, {'poolings': "(1,1)_(2,2)"}),
         ({'subsample': "1_2_1", 'streaming_type': 'mask',
-          'conv_poolings': "(1,1)_(2,2)",
-          'chunk_size_left': "64", 'chunk_size_current': "64"}),
-        ({'subsample': "2_2_1", 'streaming_type': 'reshape',
-          'conv_poolings': "(1,1)_(2,2)",
-          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
+          'chunk_size_left': "64", 'chunk_size_current': "64"}, {'poolings': "(1,1)_(2,2)"}),
         ({'subsample': "2_2_1", 'streaming_type': 'mask',
-          'conv_poolings': "(1,1)_(2,2)",
-          'chunk_size_left': "64", 'chunk_size_current': "64"}),
-        ({'subsample': "2_2_1", 'streaming_type': 'reshape',
-          'pe_type': "relative",
-          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
-        ({'subsample': "2_2_1", 'streaming_type': 'mask',
-          'pe_type': "relative",
-          'chunk_size_left': "64", 'chunk_size_current': "64"}),
+          'chunk_size_left': "64", 'chunk_size_current': "64"}, {'poolings': "(1,1)_(2,2)"}),
     ]
 )
-def test_forward(args):
-    args = make_args(**args)
-
-    batch_size = 4
-    xmaxs = [40, 45] if int(args['chunk_size_left'].split('_')[0]) == -1 else [400, 455]
+def test_forward(args, args_conv):
     device = "cpu"
+
+    args = make_args(**args)
+    if 'conv' in args['enc_type']:
+        conv_module = importlib.import_module('neural_sp.models.seq2seq.encoders.conv')
+        args_conv = make_args_conv(**args_conv)
+        args_conv['bottleneck_dim'] = args['d_model']
+        args['frontend_conv'] = conv_module.ConvEncoder(**args_conv).to(device)
+
+    bs = 4
+    xmaxs = [40, 45] if int(args['chunk_size_left'].split('_')[0]) == -1 else [400, 455]
 
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.conformer')
     enc = module.ConformerEncoder(**args).to(device)
 
     for xmax in xmaxs:
-        xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
+        xs = np.random.randn(bs, xmax, args['input_dim']).astype(np.float32)
         xlens = torch.IntTensor([len(x) - i * enc.subsampling_factor for i, x in enumerate(xs)])
         xs = pad_list([np2tensor(x, device).float() for x in xs], 0.)
 
@@ -159,11 +169,11 @@ def test_forward(args):
                     enc_out_dict = enc(xs, xlens, task='all')
                     # enc._plot_attention()  # too slow
 
-            assert enc_out_dict['ys']['xs'].size(0) == batch_size
+            assert enc_out_dict['ys']['xs'].size(0) == bs
             assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
             if args['n_layers_sub1'] > 0:
-                assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size
+                assert enc_out_dict['ys_sub1']['xs'].size(0) == bs
                 assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0]
             if args['n_layers_sub2'] > 0:
-                assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size
+                assert enc_out_dict['ys_sub2']['xs'].size(0) == bs
                 assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0]

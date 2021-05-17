@@ -50,14 +50,7 @@ class RNNEncoder(EncoderBase):
         subsample_type (str): drop/concat/max_pool/1dconv
         n_stacks (int): number of frames to stack
         n_splices (int): number of frames to splice
-        conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channels in CNN blocks
-        conv_kernel_sizes (list): size of kernels in CNN blocks
-        conv_strides (list): number of strides in CNN blocks
-        conv_poolings (list): size of poolings in CNN blocks
-        conv_batch_norm (bool): apply batch normalization only in CNN blocks
-        conv_layer_norm (bool): apply layer normalization only in CNN blocks
-        conv_bottleneck_dim (int): dimension of bottleneck layer between CNN and RNN layers
+        frontend_conv (nn.Module): frontend CNN module
         bidir_sum_fwd_bwd (bool): sum up forward and backward outputs for dimension reduction
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (float): model initialization parameter
@@ -71,9 +64,7 @@ class RNNEncoder(EncoderBase):
     def __init__(self, input_dim, enc_type, n_units, n_projs, last_proj_dim,
                  n_layers, n_layers_sub1, n_layers_sub2,
                  dropout_in, dropout,
-                 subsample, subsample_type, n_stacks, n_splices,
-                 conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
-                 conv_batch_norm, conv_layer_norm, conv_bottleneck_dim,
+                 subsample, subsample_type, n_stacks, n_splices, frontend_conv,
                  bidir_sum_fwd_bwd, task_specific_layer, param_init,
                  chunk_size_current, chunk_size_right, cnn_lookahead,
                  rsp_prob):
@@ -130,23 +121,10 @@ class RNNEncoder(EncoderBase):
         # Dropout for input-hidden connection
         self.dropout_in = nn.Dropout(p=dropout_in)
 
-        if 'conv' in enc_type:
-            assert n_stacks == 1 and n_splices == 1
-            self.conv = ConvEncoder(input_dim,
-                                    in_channel=conv_in_channel,
-                                    channels=conv_channels,
-                                    kernel_sizes=conv_kernel_sizes,
-                                    strides=conv_strides,
-                                    poolings=conv_poolings,
-                                    dropout=0.,
-                                    batch_norm=conv_batch_norm,
-                                    layer_norm=conv_layer_norm,
-                                    residual=False,
-                                    bottleneck_dim=conv_bottleneck_dim,
-                                    param_init=param_init)
+        self.conv = frontend_conv
+        if self.conv is not None:
             self._odim = self.conv.output_dim
         else:
-            self.conv = None
             self._odim = input_dim * n_splices * n_stacks
         self.cnn_lookahead = cnn_lookahead
         if not cnn_lookahead:

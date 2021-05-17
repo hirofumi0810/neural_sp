@@ -24,14 +24,7 @@ def make_rnn_args(**kwargs):
         subsample_type='drop',
         n_stacks=1,
         n_splices=1,
-        conv_in_channel=1,
-        conv_channels="32_32",
-        conv_kernel_sizes="(3,3)_(3,3)",
-        conv_strides="(1,1)_(1,1)",
-        conv_poolings="(2,2)_(2,2)",
-        conv_batch_norm=False,
-        conv_layer_norm=False,
-        conv_bottleneck_dim=0,
+        frontend_conv=None,
         bidir_sum_fwd_bwd=False,
         task_specific_layer=False,
         param_init=0.1,
@@ -67,15 +60,7 @@ def make_transformer_args(**kwargs):
         subsample_type='max_pool',
         n_stacks=1,
         n_splices=1,
-        conv_in_channel=1,
-        conv_channels="32_32",
-        conv_kernel_sizes="(3,3)_(3,3)",
-        conv_strides="(1,1)_(1,1)",
-        conv_poolings="(2,2)_(2,2)",
-        conv_batch_norm=False,
-        conv_layer_norm=False,
-        conv_bottleneck_dim=0,
-        conv_param_init=0.1,
+        frontend_conv=None,
         task_specific_layer=False,
         param_init='xavier_uniform',
         clamp_len=-1,
@@ -121,6 +106,24 @@ def make_decode_params(**kwargs):
     return args
 
 
+def make_args_conv(**kwargs):
+    args = dict(
+        input_dim=80,
+        in_channel=1,
+        channels="32_32",
+        kernel_sizes="(3,3)_(3,3)",
+        strides="(1,1)_(1,1)",
+        poolings="(2,2)_(2,2)",
+        dropout=0.1,
+        normalization='',
+        residual=False,
+        bottleneck_dim=0,
+        param_init=0.1,
+    )
+    args.update(kwargs)
+    return args
+
+
 @pytest.mark.parametrize(
     "args",
     [
@@ -150,10 +153,20 @@ def test_feature_extraction(args):
 
     if 'lstm' in args['enc_type']:
         args = make_rnn_args(**args)
+    else:
+        args = make_transformer_args(**args)
+
+    if 'conv' in args['enc_type']:
+        conv_module = importlib.import_module('neural_sp.models.seq2seq.encoders.conv')
+        args_conv = make_args_conv()
+        if 'lstm' not in args['enc_type']:
+            args_conv['bottleneck_dim'] = args['d_model']
+        args['frontend_conv'] = conv_module.ConvEncoder(**args_conv).to(device)
+
+    if 'lstm' in args['enc_type']:
         enc_module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
         enc = enc_module.RNNEncoder(**args).to(device)
     else:
-        args = make_transformer_args(**args)
         enc_module = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
         enc = enc_module.TransformerEncoder(**args).to(device)
     decode_args = make_decode_params()

@@ -41,15 +41,7 @@ def make_args_transformer(**kwargs):
         subsample_type='max_pool',
         n_stacks=1,
         n_splices=1,
-        conv_in_channel=1,
-        conv_channels="32_32",
-        conv_kernel_sizes="(3,3)_(3,3)",
-        conv_strides="(1,1)_(1,1)",
-        conv_poolings="(2,2)_(2,2)",
-        conv_batch_norm=False,
-        conv_layer_norm=False,
-        conv_bottleneck_dim=0,
-        conv_param_init=0.1,
+        frontend_conv=None,
         task_specific_layer=False,
         param_init='xavier_uniform',
         clamp_len=-1,
@@ -88,15 +80,7 @@ def make_args_conformer(**kwargs):
         subsample_type='max_pool',
         n_stacks=1,
         n_splices=1,
-        conv_in_channel=1,
-        conv_channels="32_32",
-        conv_kernel_sizes="(3,3)_(3,3)",
-        conv_strides="(1,1)_(1,1)",
-        conv_poolings="(2,2)_(2,2)",
-        conv_batch_norm=False,
-        conv_layer_norm=False,
-        conv_bottleneck_dim=0,
-        conv_param_init=0.1,
+        frontend_conv=None,
         task_specific_layer=False,
         param_init='xavier_uniform',
         clamp_len=-1,
@@ -110,99 +94,122 @@ def make_args_conformer(**kwargs):
     return args
 
 
+def make_args_conv(**kwargs):
+    args = dict(
+        input_dim=80,
+        in_channel=1,
+        channels="32_32",
+        kernel_sizes="(3,3)_(3,3)",
+        strides="(1,1)_(1,1)",
+        poolings="(2,2)_(2,2)",
+        dropout=0.1,
+        normalization='',
+        residual=False,
+        bottleneck_dim=0,
+        param_init=0.1,
+    )
+    args.update(kwargs)
+    return args
+
+
 @pytest.mark.parametrize(
-    "args",
+    "args, args_conv",
     [
         # no CNN
-        ({'enc_type': 'uni_transformer', 'chunk_size_current': "1"}),
-        ({'enc_type': 'uni_transformer', 'chunk_size_current': "4"}),
-        ({'enc_type': 'uni_conformer', 'chunk_size_current': "1"}),
-        ({'enc_type': 'uni_conformer', 'chunk_size_current': "4"}),
+        ({'enc_type': 'uni_transformer', 'chunk_size_current': "1"}, {}),
+        ({'enc_type': 'uni_transformer', 'chunk_size_current': "4"}, {}),
+        ({'enc_type': 'uni_conformer', 'chunk_size_current': "1"}, {}),
+        ({'enc_type': 'uni_conformer', 'chunk_size_current': "4"}, {}),
         ({'enc_type': 'uni_conformer', 'chunk_size_current': "1",
-          'pe_type': 'relative_xl'}),
+          'pe_type': 'relative_xl'}, {}),
         ({'enc_type': 'uni_conformer', 'chunk_size_current': "4",
-          'pe_type': 'relative_xl'}),
-        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "1"}),
-        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "4"}),
+          'pe_type': 'relative_xl'}, {}),
+        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "1"}, {}),
+        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "4"}, {}),
         # no CNN, frame stacking
-        ({'enc_type': 'uni_transformer', 'n_stacks': 3, 'chunk_size_current': "3"}),
+        ({'enc_type': 'uni_transformer', 'n_stacks': 3, 'chunk_size_current': "3"}, {}),
         # LC-Transformer
         ({'enc_type': 'transformer', 'streaming_type': 'reshape',
-          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
+          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}, {}),
         ({'enc_type': 'transformer', 'streaming_type': 'mask',
-          'chunk_size_left': "16", 'chunk_size_current': "8"}),
+          'chunk_size_left': "16", 'chunk_size_current': "8"}, {}),
         # LC-Conformer
         ({'enc_type': 'conformer', 'streaming_type': 'reshape',
-          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
+          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}, {}),
         ({'enc_type': 'conformer_v2', 'streaming_type': 'reshape',
-          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
+          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}, {}),
         ({'enc_type': 'conformer', 'streaming_type': 'mask',
-          'chunk_size_left': "16", 'chunk_size_current': "8"}),
+          'chunk_size_left': "16", 'chunk_size_current': "8"}, {}),
         ({'enc_type': 'conformer_v2', 'streaming_type': 'mask',
-          'chunk_size_left': "16", 'chunk_size_current': "8"}),
+          'chunk_size_left': "16", 'chunk_size_current': "8"}, {}),
         # subsample: 1 / 2
-        ({'enc_type': 'conv',
-          'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
-          'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
-          'chunk_size_current': "2"}),
+        ({'enc_type': 'conv', 'chunk_size_current': "2"},
+         {'channels': "32", 'kernel_sizes': "(3,3)",
+          'strides': "(1,1)", 'poolings': "(2,2)"}),
         ({'enc_type': 'conv_transformer', 'streaming_type': 'mask',
-          'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
-          'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
-          'chunk_size_left': "16", 'chunk_size_current': "8"}),
+          'chunk_size_left': "16", 'chunk_size_current': "8"},
+         {'channels': "32", 'kernel_sizes': "(3,3)",
+          'strides': "(1,1)", 'poolings': "(2,2)"}),
         ({'enc_type': 'conv_transformer', 'streaming_type': 'reshape',
-          'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
-          'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
-          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
+          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"},
+         {'channels': "32", 'kernel_sizes': "(3,3)",
+          'strides': "(1,1)", 'poolings': "(2,2)"}),
         # subsample: 1/4
-        ({'enc_type': 'conv', 'chunk_size_current': "8"}),
-        ({'enc_type': 'conv_uni_transformer', 'chunk_size_current': "8"}),
-        ({'enc_type': 'conv_uni_conformer', 'chunk_size_current': "8"}),
-        ({'enc_type': 'conv_uni_conformer_v2', 'chunk_size_current': "8"}),
+        ({'enc_type': 'conv', 'chunk_size_current': "8"}, {}),
+        ({'enc_type': 'conv_uni_transformer', 'chunk_size_current': "8"}, {}),
+        ({'enc_type': 'conv_uni_conformer', 'chunk_size_current': "8"}, {}),
+        ({'enc_type': 'conv_uni_conformer_v2', 'chunk_size_current': "8"}, {}),
         ({'enc_type': 'conv_uni_conformer_v2', 'chunk_size_current': "16",
-          'subsample': "1_2_1"}),
+          'subsample': "1_2_1"}, {}),
         ({'enc_type': 'conv_transformer', 'streaming_type': 'mask',
-          'chunk_size_left': "16", 'chunk_size_current': "8"}),
+          'chunk_size_left': "16", 'chunk_size_current': "8"}, {}),
         ({'enc_type': 'conv_conformer', 'streaming_type': 'mask',
-          'chunk_size_left': "16", 'chunk_size_current': "8"}),
+          'chunk_size_left': "16", 'chunk_size_current': "8"}, {}),
         ({'enc_type': 'conv_conformer_v2', 'streaming_type': 'mask',
-          'chunk_size_left': "16", 'chunk_size_current': "8"}),
+          'chunk_size_left': "16", 'chunk_size_current': "8"}, {}),
         ({'enc_type': 'conv_transformer', 'streaming_type': 'reshape',
-          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
+          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}, {}),
         ({'enc_type': 'conv_conformer', 'streaming_type': 'reshape',
-          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
+          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}, {}),
         ({'enc_type': 'conv_conformer_v2', 'streaming_type': 'reshape',
-          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
+          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}, {}),
         # subsample: 1/8
-        ({'enc_type': 'conv',
-          'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
-          'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
-          'chunk_size_current': "16"}),
+        ({'enc_type': 'conv', 'chunk_size_current': "16"},
+         {'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
+          'strides': "(1,1)_(1,1)_(1,1)", 'poolings': "(2,2)_(2,2)_(2,2)"}),
         ({'enc_type': 'conv_transformer', 'streaming_type': 'mask',
-          'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
-          'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
-          'chunk_size_left': "16", 'chunk_size_current': "8"}),
+          'chunk_size_left': "16", 'chunk_size_current': "8"},
+         {'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
+          'strides': "(1,1)_(1,1)_(1,1)", 'poolings': "(2,2)_(2,2)_(2,2)"}),
         ({'enc_type': 'conv_transformer', 'streaming_type': 'reshape',
-          'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
-          'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
-          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
+          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"},
+         {'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
+          'strides': "(1,1)_(1,1)_(1,1)", 'poolings': "(2,2)_(2,2)_(2,2)"}),
         # hierarchical subsample: 1/8
         ({'enc_type': 'conv_conformer', 'streaming_type': 'mask',
-          'conv_poolings': "(1,1)_(2,2)", 'subsample': "2_2_1",
-          'chunk_size_left': "16", 'chunk_size_current': "8"}),
+          'chunk_size_left': "16", 'chunk_size_current': "8", 'subsample': "2_2_1"},
+         {'poolings': "(1,1)_(2,2)"}),
     ]
 )
-def test_forward_streaming_chunkwise(args):
+def test_forward_streaming_chunkwise(args, args_conv):
+    device = "cpu"
+
     is_conformer = 'conformer' in args['enc_type']
     if is_conformer:
         args = make_args_conformer(**args)
     else:
         args = make_args_transformer(**args)
+    if 'conv' in args['enc_type']:
+        conv_module = importlib.import_module('neural_sp.models.seq2seq.encoders.conv')
+        args_conv = make_args_conv(**args_conv)
+        args_conv['bottleneck_dim'] = args['d_model']
+        args['frontend_conv'] = conv_module.ConvEncoder(**args_conv).to(device)
+
     unidir = 'uni' in args['enc_type']
 
-    batch_size = 1
+    bs = 1
     xmaxs = [t for t in range(132, 164, 3)]
-    device = "cpu"
-    atol = 1e-05
+    atol = 1e-4
 
     N_l = max(0, int(args['chunk_size_left'].split('_')[0])) // args['n_stacks']
     N_c = max(0, int(args['chunk_size_current'].split('_')[0])) // args['n_stacks']
@@ -230,14 +237,15 @@ def test_forward_streaming_chunkwise(args):
 
     enc.eval()
     for xmax_orig in xmaxs:
-        xs = np.random.randn(batch_size, xmax_orig, args['input_dim']).astype(np.float32)
+        xs = np.random.randn(bs, xmax_orig, args['input_dim']).astype(np.float32)
         if args['n_stacks'] > 1:
             xs = [module_stack.stack_frame(x, args['n_stacks'], args['n_stacks']) for x in xs]
         else:
             # zero padding for the last chunk (CNN)
             if enc.streaming_type == 'mask' and 'conv' in args['enc_type'] and xmax_orig % N_c != 0:
-                zero_pad = np.zeros((batch_size, N_c - xmax_orig % N_c, args['input_dim'])).astype(np.float32)
+                zero_pad = np.zeros((bs, N_c - xmax_orig % N_c, args['input_dim'])).astype(np.float32)
                 xs = np.concatenate([xs, zero_pad], axis=1)
+                # NOTE: this is not necessary for real streaming (only for test)
         xlens = torch.IntTensor([len(x) for x in xs])
 
         # all encoding
@@ -246,7 +254,7 @@ def test_forward_streaming_chunkwise(args):
         enc_out_dict = enc(xs_pad, xlens, task='all')
         eout_all = enc_out_dict['ys']['xs']
         elens_all = enc_out_dict['ys']['xlens']
-        assert eout_all.size(0) == batch_size
+        assert eout_all.size(0) == bs
         assert eout_all.size(1) == elens_all.max()
 
         # chunk by chunk encoding
@@ -266,14 +274,15 @@ def test_forward_streaming_chunkwise(args):
                 xlens_chunk = torch.IntTensor([max(factor, min(xmax - j, N_c)) for x in xs])
             else:
                 xlens_chunk = torch.IntTensor([max(factor, xs_pad_chunk.size(1)) for x in xs])
+
             if enc.streaming_type == 'reshape':  # ???
                 # left padding
                 if start < 0:
-                    zero_pad = xs_pad.new_zeros(batch_size, -start, args['input_dim'])
+                    zero_pad = xs_pad.new_zeros(bs, -start, args['input_dim'])
                     xs_pad_chunk = torch.cat([zero_pad, xs_pad_chunk], dim=1)
                 # right padding
                 if end >= xmax:
-                    zero_pad = xs_pad.new_zeros(batch_size, end - xmax, args['input_dim'])
+                    zero_pad = xs_pad.new_zeros(bs, end - xmax, args['input_dim'])
                     xs_pad_chunk = torch.cat([xs_pad_chunk, zero_pad], dim=1)
 
             lookback = start >= 0 and conv_context > 0
