@@ -23,12 +23,9 @@ class RNNLM(LMBase):
         super(LMBase, self).__init__()
         logger.info(self.__class__.__name__)
 
-        self.lm_type = args.lm_type
         self.save_path = save_path
 
         self.emb_dim = args.emb_dim
-        self.rnn_type = args.lm_type
-        assert args.lm_type in ['lstm', 'gru']
         self.n_units = args.n_units
         self.n_projs = args.n_projs
         self.n_layers = args.n_layers
@@ -52,14 +49,13 @@ class RNNLM(LMBase):
         self.embed = nn.Embedding(self.vocab, args.emb_dim, padding_idx=self.pad)
         self.dropout_emb = nn.Dropout(p=args.dropout_in)
 
-        rnn = nn.LSTM if args.lm_type == 'lstm' else nn.GRU
         self.rnn = nn.ModuleList()
         self.dropout = nn.Dropout(p=args.dropout_hidden)
         if args.n_projs > 0:
             self.proj = repeat(nn.Linear(args.n_units, args.n_projs), args.n_layers)
         rnn_idim = args.emb_dim + args.n_units_null_context
         for _ in range(args.n_layers):
-            self.rnn += [rnn(rnn_idim, args.n_units, 1, batch_first=True)]
+            self.rnn += [nn.LSTM(rnn_idim, args.n_units, 1, batch_first=True)]
             rnn_idim = args.n_units
             if args.n_projs > 0:
                 rnn_idim = args.n_projs
@@ -198,13 +194,10 @@ class RNNLM(LMBase):
             self.rnn[lth].flatten_parameters()  # for multi-GPUs
 
             # Path through RNN
-            if self.rnn_type == 'lstm':
-                ys_emb, (h, c) = self.rnn[lth](ys_emb, hx=(state['hxs'][lth:lth + 1],
-                                                           state['cxs'][lth:lth + 1]))
-                new_cxs.append(c)
-            elif self.rnn_type == 'gru':
-                ys_emb, h = self.rnn[lth](ys_emb, hx=state['hxs'][lth:lth + 1])
+            ys_emb, (h, c) = self.rnn[lth](ys_emb, hx=(state['hxs'][lth:lth + 1],
+                                                       state['cxs'][lth:lth + 1]))
             new_hxs.append(h)
+            new_cxs.append(c)
             ys_emb = self.dropout(ys_emb)
             if self.n_projs > 0:
                 ys_emb = torch.tanh(self.proj[lth](ys_emb))
@@ -217,8 +210,7 @@ class RNNLM(LMBase):
 
         # Repackage
         new_state['hxs'] = torch.cat(new_hxs, dim=0)
-        if self.rnn_type == 'lstm':
-            new_state['cxs'] = torch.cat(new_cxs, dim=0)
+        new_state['cxs'] = torch.cat(new_cxs, dim=0)
 
         if self.glu is not None:
             if self.residual:
@@ -250,8 +242,7 @@ class RNNLM(LMBase):
         w = next(self.parameters())
         state = {'hxs': None, 'cxs': None}
         state['hxs'] = w.new_zeros(self.n_layers, batch_size, self.n_units)
-        if self.rnn_type == 'lstm':
-            state['cxs'] = w.new_zeros(self.n_layers, batch_size, self.n_units)
+        state['cxs'] = w.new_zeros(self.n_layers, batch_size, self.n_units)
         return state
 
     def repackage_state(self, state):
@@ -268,6 +259,5 @@ class RNNLM(LMBase):
 
         """
         state['hxs'] = state['hxs'].detach()
-        if self.rnn_type == 'lstm':
-            state['cxs'] = state['cxs'].detach()
+        state['cxs'] = state['cxs'].detach()
         return state

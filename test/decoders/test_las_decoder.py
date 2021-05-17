@@ -11,8 +11,10 @@ import pytest
 import torch
 
 from neural_sp.datasets.token_converter.character import Idx2char
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import (
+    np2tensor,
+    pad_list
+)
 
 
 ENC_N_UNITS = 16
@@ -26,7 +28,6 @@ def make_args(**kwargs):
         special_symbols={'blank': 0, 'unk': 1, 'eos': 2, 'pad': 3},
         enc_n_units=ENC_N_UNITS,
         attn_type='location',
-        rnn_type='lstm',
         n_units=16,
         n_projs=0,
         n_layers=2,
@@ -80,11 +81,8 @@ def make_args(**kwargs):
 @pytest.mark.parametrize(
     "args",
     [
-        # RNN type
-        ({'rnn_type': 'lstm', 'n_layers': 1}),
-        ({'rnn_type': 'lstm', 'n_layers': 2}),
-        ({'rnn_type': 'gru', 'n_layers': 1}),
-        ({'rnn_type': 'gru', 'n_layers': 2}),
+        ({'n_layers': 1}),
+        ({'n_layers': 2}),
         # attention
         ({'attn_type': 'add'}),
         ({'attn_type': 'dot'}),
@@ -138,11 +136,11 @@ def make_args(**kwargs):
 def test_forward(args):
     args = make_args(**args)
 
-    batch_size = 4
+    bs = 4
     emax = 40
     device = "cpu"
 
-    eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
+    eouts = np.random.randn(bs, emax, ENC_N_UNITS).astype(np.float32)
     elens = torch.IntTensor([len(x) for x in eouts])
     eouts = pad_list([np2tensor(x, device).float() for x in eouts], 0.)
     ylens = [4, 5, 3, 7]
@@ -150,7 +148,7 @@ def test_forward(args):
     trigger_points = None
     if args['latency_metric'] in ['minlt', 'decot']:
         trigger_points = torch.arange(max(ylens) + 1, dtype=torch.int32,
-                                      device=device).unsqueeze(0).repeat(batch_size, 1)
+                                      device=device).unsqueeze(0).repeat(bs, 1)
 
     if args['lm_init'] or args['lm_fusion']:
         args_lm = make_args_rnnlm()
@@ -213,7 +211,6 @@ def make_decode_params(**kwargs):
 
 def make_args_rnnlm(**kwargs):
     args = dict(
-        lm_type='lstm',
         n_units=16,
         n_projs=0,
         n_layers=2,
@@ -309,11 +306,11 @@ def test_decoding(backward, lm_fusion, params):
     args['lm_fusion'] = lm_fusion
     params = make_decode_params(**params)
 
-    batch_size = params['recog_batch_size']
+    bs = params['recog_batch_size']
     emax = 40
     device = "cpu"
 
-    eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
+    eouts = np.random.randn(bs, emax, ENC_N_UNITS).astype(np.float32)
     elens = torch.IntTensor([len(x) for x in eouts])
     eouts = pad_list([np2tensor(x, device).float() for x in eouts], 0.)
     ylens = [4, 5, 3, 7]
@@ -321,7 +318,7 @@ def test_decoding(backward, lm_fusion, params):
 
     ctc_log_probs = None
     if params['recog_ctc_weight'] > 0:
-        ctc_logits = torch.FloatTensor(batch_size, emax, VOCAB, device=device)
+        ctc_logits = torch.FloatTensor(bs, emax, VOCAB, device=device)
         ctc_log_probs = torch.softmax(ctc_logits, dim=-1)
     if params['recog_ctc_weight'] == 1:
         args['ctc_weight'] = 1
@@ -360,7 +357,7 @@ def test_decoding(backward, lm_fusion, params):
                     eouts, elens, params, idx2token,
                     lm, lm_second, lm_second_bwd, nbest=1)
             assert isinstance(nbest_hyps, list)
-            assert len(nbest_hyps) == batch_size
+            assert len(nbest_hyps) == bs
         else:
             if params['recog_beam_width'] == 1:
                 out = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=idx2token,
@@ -369,7 +366,7 @@ def test_decoding(backward, lm_fusion, params):
                 assert len(out) == 2
                 nbest_hyps, aws = out
                 assert isinstance(nbest_hyps, list)
-                assert len(nbest_hyps) == batch_size
+                assert len(nbest_hyps) == bs
                 assert isinstance(aws, list)
                 assert aws[0].shape == (args['attn_n_heads'], len(nbest_hyps[0]), emax)
             else:
@@ -381,13 +378,13 @@ def test_decoding(backward, lm_fusion, params):
                 assert len(out) == 3
                 nbest_hyps, aws, scores = out
                 assert isinstance(nbest_hyps, list)
-                assert len(nbest_hyps) == batch_size
+                assert len(nbest_hyps) == bs
                 assert len(nbest_hyps[0]) == params['nbest']
                 ymax = len(nbest_hyps[0][0])
                 assert isinstance(aws, list)
                 assert aws[0][0].shape == (args['attn_n_heads'], ymax, emax)
                 assert isinstance(scores, list)
-                assert len(scores) == batch_size
+                assert len(scores) == bs
                 assert len(scores[0]) == params['nbest']
 
                 # ensemble
@@ -407,13 +404,13 @@ def test_decoding(backward, lm_fusion, params):
                 assert len(out) == 3
                 nbest_hyps, aws, scores = out
                 assert isinstance(nbest_hyps, list)
-                assert len(nbest_hyps) == batch_size
+                assert len(nbest_hyps) == bs
                 assert len(nbest_hyps[0]) == params['nbest']
                 ymax = len(nbest_hyps[0][0])
                 assert isinstance(aws, list)
                 assert aws[0][0].shape == (args['attn_n_heads'], ymax, emax)
                 assert isinstance(scores, list)
-                assert len(scores) == batch_size
+                assert len(scores) == bs
                 assert len(scores[0]) == params['nbest']
 
 
@@ -431,16 +428,16 @@ def test_streaming_decoding(params):
     args = make_args(attn_type='mocha')
     params = make_decode_params(**params)
 
-    batch_size = params['recog_batch_size']
+    bs = params['recog_batch_size']
     emax = 400
     device = "cpu"
 
-    eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
+    eouts = np.random.randn(bs, emax, ENC_N_UNITS).astype(np.float32)
     eouts = pad_list([np2tensor(x, device).float() for x in eouts], 0.)
 
     ctc_log_probs = None
     if params['recog_ctc_weight'] > 0:
-        ctc_log_probs = torch.FloatTensor(batch_size, emax, VOCAB, device=device)
+        ctc_log_probs = torch.FloatTensor(bs, emax, VOCAB, device=device)
 
     args_lm = make_args_rnnlm()
     module_rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')

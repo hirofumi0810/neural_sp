@@ -39,7 +39,6 @@ class RNNTransducer(DecoderBase):
             pad (int): index for <pad>
             blank (int): index for <blank>
         enc_n_units (int): number of units of encoder outputs
-        rnn_type (str): lstm_transducer/gru_transducer
         n_units (int): number of units in each RNN layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of RNN layers
@@ -59,7 +58,7 @@ class RNNTransducer(DecoderBase):
     """
 
     def __init__(self, special_symbols,
-                 enc_n_units, rnn_type, n_units, n_projs, n_layers,
+                 enc_n_units, n_units, n_projs, n_layers,
                  bottleneck_dim, emb_dim, vocab,
                  dropout, dropout_emb,
                  ctc_weight, ctc_lsm_prob, ctc_fc_list,
@@ -72,8 +71,6 @@ class RNNTransducer(DecoderBase):
         self.pad = special_symbols['pad']
         self.blank = special_symbols['blank']
         self.vocab = vocab
-        self.rnn_type = rnn_type
-        assert rnn_type in ['lstm_transducer', 'gru_transducer']
         self.enc_n_units = enc_n_units
         self.dec_n_units = n_units
         self.n_projs = n_projs
@@ -103,12 +100,11 @@ class RNNTransducer(DecoderBase):
 
             # Prediction network
             self.rnn = nn.ModuleList()
-            rnn = nn.LSTM if rnn_type == 'lstm_transducer' else nn.GRU
             dec_odim = emb_dim
             self.proj = repeat(nn.Linear(n_units, n_projs), n_layers) if n_projs > 0 else None
             self.dropout = nn.Dropout(p=dropout)
             for _ in range(n_layers):
-                self.rnn += [rnn(dec_odim, n_units, 1, batch_first=True)]
+                self.rnn += [nn.LSTM(dec_odim, n_units, 1, batch_first=True)]
                 dec_odim = n_projs if n_projs > 0 else n_units
 
             self.embed = nn.Embedding(vocab, emb_dim, padding_idx=self.pad)
@@ -300,21 +296,17 @@ class RNNTransducer(DecoderBase):
 
         new_hxs, new_cxs = [], []
         for lth in range(self.n_layers):
-            if self.rnn_type == 'lstm_transducer':
-                ys_emb, (h, c) = self.rnn[lth](ys_emb, hx=(dstate['hxs'][lth:lth + 1],
-                                                           dstate['cxs'][lth:lth + 1]))
-                new_cxs.append(c)
-            elif self.rnn_type == 'gru_transducer':
-                ys_emb, h = self.rnn[lth](ys_emb, hx=dstate['hxs'][lth:lth + 1])
+            ys_emb, (h, c) = self.rnn[lth](ys_emb, hx=(dstate['hxs'][lth:lth + 1],
+                                                       dstate['cxs'][lth:lth + 1]))
             new_hxs.append(h)
+            new_cxs.append(c)
             ys_emb = self.dropout(ys_emb)
             if self.proj is not None:
                 ys_emb = torch.relu(self.proj[lth](ys_emb))
 
         # Repackage
         new_dstate['hxs'] = torch.cat(new_hxs, dim=0)
-        if self.rnn_type == 'lstm_transducer':
-            new_dstate['cxs'] = torch.cat(new_cxs, dim=0)
+        new_dstate['cxs'] = torch.cat(new_cxs, dim=0)
 
         return ys_emb, new_dstate
 
@@ -332,8 +324,7 @@ class RNNTransducer(DecoderBase):
         w = next(self.parameters())
         zero_state = {'hxs': None, 'cxs': None}
         zero_state['hxs'] = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
-        if self.rnn_type == 'lstm_transducer':
-            zero_state['cxs'] = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
+        zero_state['cxs'] = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
         return zero_state
 
     def greedy(self, eouts, elens, max_len_ratio, idx2token,
@@ -762,14 +753,14 @@ class RNNTransducer(DecoderBase):
                                                'path_len': beam['path_len'] + 1})
 
                 # Local pruning at each expansion (C <- D)
-                hyps_v_sorted = sorted(new_hyps_v, key=lambda x: x['score'], reverse=True)
-                hyps_v_sorted = helper.merge_rnnt_path(hyps_v_sorted, merge_prob)
-                hyps_v = hyps_v_sorted[:beam_width]
+                new_hyps_v = sorted(new_hyps_v, key=lambda x: x['score'], reverse=True)
+                new_hyps_v = helper.merge_rnnt_path(new_hyps_v, merge_prob)
+                hyps_v = new_hyps_v[:beam_width]
 
             # Local pruning at t-th index (B <- A)
-            hyps_sorted = sorted(new_hyps, key=lambda x: x['score'] / len(x['hyp']), reverse=True)
-            hyps_sorted = helper.merge_rnnt_path(hyps_sorted, merge_prob)
-            hyps = hyps_sorted[:beam_width]
+            new_hyps = sorted(new_hyps, key=lambda x: x['score'] / len(x['hyp']), reverse=True)
+            new_hyps = helper.merge_rnnt_path(new_hyps, merge_prob)
+            hyps = new_hyps[:beam_width]
 
         return hyps, hyps_v
 

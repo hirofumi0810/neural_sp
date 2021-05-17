@@ -87,7 +87,7 @@ class RNNEncoder(EncoderBase):
                           (n_layers_sub1, n_layers_sub2))
 
         self.enc_type = enc_type
-        self.bidirectional = True if ('blstm' in enc_type or 'bgru' in enc_type) else False
+        self.bidirectional = True if 'blstm' in enc_type else False
         self.n_units = n_units
         self.n_dirs = 2 if self.bidirectional else 1
         self.n_layers = n_layers
@@ -102,7 +102,7 @@ class RNNEncoder(EncoderBase):
         self.N_r = int(chunk_size_right.split('_')[0]) // n_stacks
         self.lc_bidir = (self.N_c > 0 or self.N_r > 0) and self.bidirectional
         if self.lc_bidir:
-            assert enc_type not in ['lstm', 'gru', 'conv_lstm', 'conv_gru']
+            assert enc_type not in ['lstm', 'conv_lstm']
             assert n_layers_sub2 == 0
 
         # for streaming
@@ -141,19 +141,12 @@ class RNNEncoder(EncoderBase):
             self.padding = Padding(bidir_sum_fwd_bwd=bidir_sum_fwd_bwd if not self.lc_bidir else False)
 
             for lth in range(n_layers):
-                if 'lstm' in enc_type:
-                    rnn_i = nn.LSTM
-                elif 'gru' in enc_type:
-                    rnn_i = nn.GRU
-                else:
-                    raise ValueError('enc_type must be "(conv_)(b)lstm" or "(conv_)(b)gru".')
-
                 if self.lc_bidir:
-                    self.rnn += [rnn_i(self._odim, n_units, 1, batch_first=True)]
-                    self.rnn_bwd += [rnn_i(self._odim, n_units, 1, batch_first=True)]
+                    self.rnn += [nn.LSTM(self._odim, n_units, 1, batch_first=True)]
+                    self.rnn_bwd += [nn.LSTM(self._odim, n_units, 1, batch_first=True)]
                 else:
-                    self.rnn += [rnn_i(self._odim, n_units, 1, batch_first=True,
-                                       bidirectional=self.bidirectional)]
+                    self.rnn += [nn.LSTM(self._odim, n_units, 1, batch_first=True,
+                                         bidirectional=self.bidirectional)]
                 self._odim = n_units if bidir_sum_fwd_bwd else n_units * self.n_dirs
 
                 # Task specific layer

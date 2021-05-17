@@ -14,7 +14,6 @@ VOCAB = 100  # large for adaptive softmax
 
 def make_args(**kwargs):
     args = dict(
-        lm_type='lstm',
         n_units=32,
         n_projs=0,
         n_layers=2,
@@ -39,10 +38,8 @@ def make_args(**kwargs):
 @pytest.mark.parametrize(
     "args", [
         # RNN type
-        ({'lm_type': 'lstm', 'n_layers': 1}),
-        ({'lm_type': 'lstm', 'n_layers': 2}),
-        ({'lm_type': 'gru', 'n_layers': 1}),
-        ({'lm_type': 'gru', 'n_layers': 2}),
+        ({'n_layers': 1}),
+        ({'n_layers': 2}),
         # projection
         ({'n_projs': 16}),
         # regularization
