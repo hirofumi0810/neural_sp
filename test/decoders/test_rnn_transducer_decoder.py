@@ -10,8 +10,10 @@ import pytest
 import torch
 
 from neural_sp.datasets.token_converter.character import Idx2char
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import (
+    np2tensor,
+    pad_list
+)
 
 
 ENC_N_UNITS = 16
@@ -24,7 +26,6 @@ def make_args(**kwargs):
     args = dict(
         special_symbols={'blank': 0, 'unk': 1, 'eos': 2, 'pad': 3},
         enc_n_units=ENC_N_UNITS,
-        rnn_type='lstm_transducer',
         n_units=16,
         n_projs=0,
         n_layers=2,
@@ -48,11 +49,8 @@ def make_args(**kwargs):
 @pytest.mark.parametrize(
     "args",
     [
-        # RNN type
-        ({'rnn_type': 'lstm_transducer', 'n_layers': 1}),
-        ({'rnn_type': 'lstm_transducer', 'n_layers': 2}),
-        ({'rnn_type': 'gru_transducer', 'n_layers': 1}),
-        ({'rnn_type': 'gru_transducer', 'n_layers': 2}),
+        ({'n_layers': 1}),
+        ({'n_layers': 2}),
         # projection
         ({'n_projs': 8}),
         # CTC
@@ -64,11 +62,11 @@ def make_args(**kwargs):
 def test_forward(args):
     args = make_args(**args)
 
-    batch_size = 4
+    bs = 4
     emax = 40
     device = "cpu"
 
-    eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
+    eouts = np.random.randn(bs, emax, ENC_N_UNITS).astype(np.float32)
     elens = torch.IntTensor([len(x) for x in eouts])
     eouts = pad_list([np2tensor(x, device).float() for x in eouts], 0.)
 
@@ -107,7 +105,6 @@ def make_decode_params(**kwargs):
 
 def make_args_rnnlm(**kwargs):
     args = dict(
-        lm_type='lstm',
         n_units=16,
         n_projs=0,
         n_layers=2,
@@ -154,16 +151,16 @@ def test_decoding(params):
     args = make_args()
     params = make_decode_params(**params)
 
-    batch_size = params['recog_batch_size']
+    bs = params['recog_batch_size']
     emax = 40
     device = "cpu"
 
-    eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
+    eouts = np.random.randn(bs, emax, ENC_N_UNITS).astype(np.float32)
     elens = torch.IntTensor([len(x) for x in eouts])
     eouts = pad_list([np2tensor(x, device).float() for x in eouts], 0.)
     ctc_log_probs = None
     if params['recog_ctc_weight'] > 0:
-        ctc_logits = torch.FloatTensor(batch_size, emax, VOCAB, device=device)
+        ctc_logits = torch.FloatTensor(bs, emax, VOCAB, device=device)
         ctc_log_probs = torch.softmax(ctc_logits, dim=-1)
     lm = None
     if params['recog_lm_weight'] > 0:
@@ -197,7 +194,7 @@ def test_decoding(params):
             assert len(out) == 2
             hyps, aws = out
             assert isinstance(hyps, list)
-            assert len(hyps) == batch_size
+            assert len(hyps) == bs
             assert aws is None
         else:
             out = dec.beam_search(eouts, elens, params, idx2token,
@@ -208,7 +205,7 @@ def test_decoding(params):
             assert len(out) == 3
             nbest_hyps, aws, scores = out
             assert isinstance(nbest_hyps, list)
-            assert len(nbest_hyps) == batch_size
+            assert len(nbest_hyps) == bs
             assert len(nbest_hyps[0]) == params['nbest']
             assert aws is None
             assert scores is None

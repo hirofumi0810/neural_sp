@@ -9,8 +9,10 @@ import numpy as np
 import pytest
 import torch
 
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import (
+    np2tensor,
+    pad_list
+)
 
 
 def make_args(**kwargs):
@@ -65,22 +67,15 @@ def make_args_conv(**kwargs):
     [
         # RNN type
         ({'enc_type': 'blstm'}, {}),
-        ({'enc_type': 'bgru'}, {}),
         ({'enc_type': 'lstm'}, {}),
         ({'enc_type': 'lstm', 'rsp_prob': 0.5}, {}),
-        ({'enc_type': 'gru'}, {}),
-        ({'enc_type': 'gru', 'rsp_prob': 0.5}, {}),
         # 2dCNN-RNN
         ({'enc_type': 'conv_blstm'}, {}),
         ({'enc_type': 'conv_blstm', 'input_dim': 240}, {'input_dim': 240, 'in_channel': 3}),
-        ({'enc_type': 'conv_bgru'}, {}),
-        ({'enc_type': 'conv_gru'}, {}),
         # 1dCNN-RNN
         ({'enc_type': 'conv_blstm'}, {'kernel_sizes': "3_3", 'strides': "1_1", 'poolings': "2_2"}),
         ({'enc_type': 'conv_blstm', 'input_dim': 240},
          {'input_dim': 240, 'in_channel': 3, 'kernel_sizes': "3_3", 'strides': "1_1", 'poolings': "2_2"}),
-        ({'enc_type': 'conv_bgru'}, {'kernel_sizes': "3_3", 'strides': "1_1", 'poolings': "2_2"}),
-        ({'enc_type': 'conv_gru'}, {'kernel_sizes': "3_3", 'strides': "1_1", 'poolings': "2_2"}),
         # normalization
         ({'enc_type': 'conv_blstm'}, {'normalization': 'batch_norm'}),
         ({'enc_type': 'conv_blstm'}, {'normalization': 'layer_norm'}),

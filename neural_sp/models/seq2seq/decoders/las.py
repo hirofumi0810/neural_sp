@@ -58,7 +58,6 @@ class RNNDecoder(DecoderBase):
             blank (int): index for <blank>
         enc_n_units (int): number of units of encoder outputs
         attn_type (str): type of attention mechanism
-        rnn_type (str): lstm/gru
         n_units (int): number of units in each RNN layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of RNN layers
@@ -108,7 +107,7 @@ class RNNDecoder(DecoderBase):
     """
 
     def __init__(self, special_symbols,
-                 enc_n_units, attn_type, rnn_type, n_units, n_projs, n_layers,
+                 enc_n_units, attn_type, n_units, n_projs, n_layers,
                  bottleneck_dim, emb_dim, vocab, tie_embedding,
                  attn_dim, attn_sharpening_factor, attn_sigmoid_smoothing,
                  attn_conv_out_channels, attn_conv_kernel_size, attn_n_heads,
@@ -132,8 +131,6 @@ class RNNDecoder(DecoderBase):
         self.blank = special_symbols['blank']
         self.vocab = vocab
         self.attn_type = attn_type
-        self.rnn_type = rnn_type
-        assert rnn_type in ['lstm', 'gru']
         self.enc_n_units = enc_n_units
         self.dec_n_units = n_units
         self.n_projs = n_projs
@@ -233,12 +230,11 @@ class RNNDecoder(DecoderBase):
 
             # Decoder
             self.rnn = nn.ModuleList()
-            cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
             dec_odim = enc_n_units + emb_dim
             self.proj = repeat(nn.Linear(n_units, n_projs), n_layers) if n_projs > 0 else None
             self.dropout = nn.Dropout(p=dropout)
             for _ in range(n_layers):
-                self.rnn += [cell(dec_odim, n_units)]
+                self.rnn += [nn.LSTMCell(dec_odim, n_units)]
                 dec_odim = n_projs if n_projs > 0 else n_units
 
             # RNNLM fusion
@@ -672,8 +668,9 @@ class RNNDecoder(DecoderBase):
             dstates, cv, aw, attn_state, attn_v = self.decode_step(
                 eouts, dstates, cv, y_emb, src_mask, aw, lmout, mode='parallel',
                 trigger_points=forced_trigger_points[:, i:i + 1] if forced_trigger_points is not None else None)
-            aws.append(aw)  # `[B, H, 1, T]`
             logits.append(attn_v)
+
+            aws.append(aw)  # `[B, H, 1, T]`
             if attn_state.get('beta', None) is not None:
                 betas.append(attn_state['beta'])  # `[B, H, 1, T]`
             if attn_state.get('p_choose', None) is not None:
@@ -684,18 +681,15 @@ class RNNDecoder(DecoderBase):
             if self.training and self.discourse_aware:
                 for b in [b for b, ylen in enumerate(ylens.tolist()) if i == ylen - 1]:
                     self.dstate_prev['hxs'][b] = dstates['dstate'][0][:, b:b + 1].detach()
-                    if self.rnn_type == 'lstm':
-                        self.dstate_prev['cxs'][b] = dstates['dstate'][1][:, b:b + 1].detach()
+                    self.dstate_prev['cxs'][b] = dstates['dstate'][1][:, b:b + 1].detach()
 
         if self.training and self.discourse_aware:
             if bs > 1:
                 self.dstate_prev['hxs'] = torch.cat(self.dstate_prev['hxs'], dim=1)
-                if self.rnn_type == 'lstm':
-                    self.dstate_prev['cxs'] = torch.cat(self.dstate_prev['cxs'], dim=1)
+                self.dstate_prev['cxs'] = torch.cat(self.dstate_prev['cxs'], dim=1)
             else:
                 self.dstate_prev['hxs'] = self.dstate_prev['hxs'][0]
-                if self.rnn_type == 'lstm':
-                    self.dstate_prev['cxs'] = self.dstate_prev['cxs'][0]
+                self.dstate_prev['cxs'] = self.dstate_prev['cxs'][0]
 
         logits = self.output(torch.cat(logits, dim=1))
 
@@ -796,7 +790,7 @@ class RNNDecoder(DecoderBase):
         dstates = {'dstate': None}
         w = next(self.parameters())
         hxs = w.new_zeros(self.n_layers, bs, self.dec_n_units)
-        cxs = w.new_zeros(self.n_layers, bs, self.dec_n_units) if self.rnn_type == 'lstm' else None
+        cxs = w.new_zeros(self.n_layers, bs, self.dec_n_units)
         dstates['dstate'] = (hxs, cxs)
         return dstates
 
@@ -824,12 +818,9 @@ class RNNDecoder(DecoderBase):
 
         new_hxs, new_cxs = [], []
         for lth in range(self.n_layers):
-            if self.rnn_type == 'lstm':
-                h, c = self.rnn[lth](dout, (hxs[lth], cxs[lth]))
-                new_cxs.append(c)
-            elif self.rnn_type == 'gru':
-                h = self.rnn[lth](dout, hxs[lth])
+            h, c = self.rnn[lth](dout, (hxs[lth], cxs[lth]))
             new_hxs.append(h)
+            new_cxs.append(c)
             dout = self.dropout(h)
             if self.proj is not None:
                 dout = torch.relu(self.proj[lth](dout))
@@ -837,8 +828,7 @@ class RNNDecoder(DecoderBase):
             if lth == 0:
                 new_dstates['dout_score'] = dout.unsqueeze(1)
         new_hxs = torch.stack(new_hxs, dim=0)
-        if self.rnn_type == 'lstm':
-            new_cxs = torch.stack(new_cxs, dim=0)
+        new_cxs = torch.stack(new_cxs, dim=0)
 
         # use output in the the LAST layer for token generation
         new_dstates['dout_gen'] = dout.unsqueeze(1)
@@ -944,8 +934,7 @@ class RNNDecoder(DecoderBase):
                         eos_flags[b] = True
                         if self.discourse_aware:
                             self.dstate_prev['hxs'][b] = dstates['dstate'][0][:, b:b + 1]
-                            if self.rnn_type == 'lstm':
-                                self.dstate_prev['cxs'][b] = dstates['dstate'][1][:, b:b + 1]
+                            self.dstate_prev['cxs'][b] = dstates['dstate'][1][:, b:b + 1]
                     ylens[b] += 1  # include <eos>
 
             # Break if <eos> is outputed in all mini-batch
@@ -958,12 +947,10 @@ class RNNDecoder(DecoderBase):
         if self.discourse_aware:
             if bs > 1:
                 self.dstate_prev['hxs'] = torch.cat(self.dstate_prev['hxs'], dim=1)
-                if self.rnn_type == 'lstm':
-                    self.dstate_prev['cxs'] = torch.cat(self.dstate_prev['cxs'], dim=1)
+                self.dstate_prev['cxs'] = torch.cat(self.dstate_prev['cxs'], dim=1)
             else:
                 self.dstate_prev['hxs'] = self.dstate_prev['hxs']
-                if self.rnn_type == 'lstm':
-                    self.dstate_prev['cxs'] = self.dstate_prev['cxs']
+                self.dstate_prev['cxs'] = self.dstate_prev['cxs']
 
         # LM state carry over
         self.lmstate_final = lmstate
@@ -1158,7 +1145,8 @@ class RNNDecoder(DecoderBase):
                 self.prev_spk = speakers[b]
 
             end_hyps = []
-            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state, ensmbl_decs)
+            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state,
+                                        ensmbl_decs)
             streamable_global = True
             ymax = math.ceil(elens[b] * max_len_ratio)
             for i in range(ymax):
@@ -1177,8 +1165,7 @@ class RNNDecoder(DecoderBase):
                 else:
                     aw = torch.cat([beam['aws'][-1] for beam in hyps], dim=0) if i > 0 else None
                 hxs = torch.cat([beam['dstates']['dstate'][0] for beam in hyps], dim=1)
-                if self.rnn_type == 'lstm':
-                    cxs = torch.cat([beam['dstates']['dstate'][1] for beam in hyps], dim=1)
+                cxs = torch.cat([beam['dstates']['dstate'][1] for beam in hyps], dim=1)
                 dstates = {'dstate': (hxs, cxs)}
 
                 # Update LM states for LM fusion
@@ -1205,11 +1192,10 @@ class RNNDecoder(DecoderBase):
                     cv_e = torch.cat([beam['ensmbl_cv'][i_e] for beam in hyps], dim=0)
                     aw_e = torch.cat([beam['ensmbl_aws'][i_e][-1] for beam in hyps], dim=0) if i > 0 else None
                     hxs_e = torch.cat([beam['ensmbl_dstate'][i_e]['dstate'][0] for beam in hyps], dim=1)
-                    if self.rnn_type == 'lstm':
-                        cxs_e = torch.cat([beam['ensmbl_dstate'][i_e]['dstate'][1] for beam in hyps], dim=1)
+                    cxs_e = torch.cat([beam['ensmbl_dstate'][i_e]['dstate'][1] for beam in hyps], dim=1)
                     dstates_e = {'dstate': (hxs_e, cxs_e)}
 
-                    dstates_e, cv_e, aw_e, attn_state_e, attn_v_e = dec.decode_step(
+                    dstates_e, cv_e, aw_e, _, attn_v_e = dec.decode_step(
                         ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]].repeat([cv_e.size(0), 1, 1]),
                         dstates_e, cv_e, dec.embed_token_id(y), None, aw_e, lmout)
 
@@ -1447,8 +1433,7 @@ class RNNDecoder(DecoderBase):
         else:
             aw = torch.cat([beam['aws'][-1] for beam in hyps], dim=0) if i > 0 else None
         hxs = torch.cat([beam['dstates']['dstate'][0] for beam in hyps], dim=1)
-        if 'lstm' in self.rnn_type:
-            cxs = torch.cat([beam['dstates']['dstate'][1] for beam in hyps], dim=1)
+        cxs = torch.cat([beam['dstates']['dstate'][1] for beam in hyps], dim=1)
         dstates = {'dstate': (hxs, cxs)}
         return y, cv, aw, dstates
 
