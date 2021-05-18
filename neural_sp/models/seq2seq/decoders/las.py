@@ -1186,7 +1186,7 @@ class RNNDecoder(DecoderBase):
                     eouts_b_i, dstates, cv, y_emb, None, aw, lmout)
                 probs = torch.softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)
 
-                # for the ensemble
+                # for ensemble
                 ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
                 for i_e, dec in enumerate(ensmbl_decs):
                     cv_e = torch.cat([beam['ensmbl_cv'][i_e] for beam in hyps], dim=0)
@@ -1198,18 +1198,24 @@ class RNNDecoder(DecoderBase):
                     dstates_e, cv_e, aw_e, _, attn_v_e = dec.decode_step(
                         ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]].repeat([cv_e.size(0), 1, 1]),
                         dstates_e, cv_e, dec.embed_token_id(y), None, aw_e, lmout)
-
-                    ensmbl_dstate += [{'dstate': (dstates_e['dstate'][0][:, j:j + 1],
-                                                  dstates_e['dstate'][1][:, j:j + 1])}]
-                    ensmbl_cv += [cv_e[j:j + 1]]
-                    ensmbl_aws += [beam['ensmbl_aws'][i_e] + [aw_e[j:j + 1]]]
-                    probs += torch.softmax(dec.output(attn_v_e).squeeze(1), dim=1)
+                    probs += torch.softmax(dec.output(attn_v_e).squeeze(1) * softmax_smoothing, dim=1)
+                    ensmbl_dstate += [dstates_e]
+                    ensmbl_cv += [cv_e]
+                    ensmbl_aws += [aw_e]
 
                 # Ensemble
                 scores_att = torch.log(probs / (len(ensmbl_decs) + 1))
 
                 new_hyps = []
                 for j, beam in enumerate(hyps):
+                    ensmbl_dstate_j, ensmbl_cv_j, ensmbl_aws_j = [], [], []
+                    if len(ensmbl_decs) > 0:
+                        for i_e in range(len(ensmbl_decs)):
+                            ensmbl_dstate_j += [{'dstate': (ensmbl_dstate[i_e]['dstate'][0][:, j:j + 1],
+                                                            ensmbl_dstate[i_e]['dstate'][1][:, j:j + 1])}]
+                            ensmbl_cv_j += [ensmbl_cv[i_e][j:j + 1]]
+                            ensmbl_aws_j += [beam['ensmbl_aws'][i_e] + [ensmbl_aws[i_e][j:j + 1]]]
+
                     # Attention scores
                     total_scores_att = beam['score_att'] + scores_att[j:j + 1]
                     total_scores = total_scores_att * (1 - ctc_weight)
@@ -1308,9 +1314,9 @@ class RNNDecoder(DecoderBase):
                              'myu': attn_state['myu'][j:j + 1] if self.attn_type in ['gmm', 'sagmm'] else None,
                              'lmstate': new_lmstate,
                              'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
-                             'ensmbl_dstate': ensmbl_dstate,
-                             'ensmbl_cv': ensmbl_cv,
-                             'ensmbl_aws': ensmbl_aws,
+                             'ensmbl_dstate': ensmbl_dstate_j,
+                             'ensmbl_cv': ensmbl_cv_j,
+                             'ensmbl_aws': ensmbl_aws_j,
                              'streamable': streamable_global,
                              'streaming_failed_point': streaming_failed_point,
                              'quantity_rate': quantity_rate})
