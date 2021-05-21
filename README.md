@@ -5,20 +5,8 @@
 
 ## How to install
 ```
-# Set path to CUDA, NCCL
-CUDAROOT=/usr/local/cuda
-NCCL_ROOT=/usr/local/nccl
-
-export CPATH=$NCCL_ROOT/include:$CPATH
-export LD_LIBRARY_PATH=$NCCL_ROOT/lib/:$CUDAROOT/lib64:$LD_LIBRARY_PATH
-export LIBRARY_PATH=$NCCL_ROOT/lib/:$LIBRARY_PATH
-export CUDA_HOME=$CUDAROOT
-export CUDA_PATH=$CUDAROOT
-export CPATH=$CUDA_PATH/include:$CPATH  # for warp-rnnt
-
-# Install miniconda, python libraries, and other tools
 cd tools
-make KALDI=/path/to/kaldi
+make KALDI=/path/to/kaldi TOOL=/path/to/save/tools
 ```
 
 ## Key features
@@ -27,6 +15,7 @@ make KALDI=/path/to/kaldi
     - AISHELL-1
     - AMI
     - CSJ
+    - LaboroTVSpeech
     - Librispeech
     - Switchboard (+ Fisher)
     - TEDLIUM2/TEDLIUM3
@@ -135,6 +124,11 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | Model     | SWB  | CH   |
 | --------- | ---- | ---- |
 | BLSTM LAS | 7.8  | 13.8 |
+
+### LaboroTVSpeech (CER)
+| Model          | dev_4k | dev   | tedx-jp-10k |
+| -------------- | ----- | -----  | -----       |
+| Conformer LAS  | 7.8   | 10.1   | 12.4        |
 
 ### Librispeech (WER)
 | Model          | dev-clean | dev-other | test-clean | test-other |

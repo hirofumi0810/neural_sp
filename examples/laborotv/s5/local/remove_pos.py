@@ -1,0 +1,1 @@
+../../../csj/s5/local/remove_pos.py
