@@ -6,7 +6,6 @@
 
 """Evaluate ASR model."""
 
-import argparse
 import copy
 import logging
 import os
@@ -14,7 +13,10 @@ import sys
 import time
 
 from neural_sp.bin.args_asr import parse_args_eval
-from neural_sp.bin.eval_utils import average_checkpoints
+from neural_sp.bin.eval_utils import (
+    average_checkpoints,
+    load_lm
+)
 from neural_sp.bin.train_utils import (
     load_checkpoint,
     load_config,
@@ -28,7 +30,6 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
-from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 
 logger = logging.getLogger(__name__)
@@ -63,10 +64,8 @@ def main():
             epoch = int(float(args.recog_model[0].split('-')[-1]) * 10) / 10
             if args.recog_n_average > 1:
                 # Model averaging for Transformer
-                # topk_list = load_checkpoint(args.recog_model[0], model)
-                model = average_checkpoints(model, args.recog_model[0],
-                                            # topk_list=topk_list,
-                                            n_average=args.recog_n_average)
+                average_checkpoints(model, args.recog_model[0],
+                                    n_average=args.recog_n_average)
             else:
                 load_checkpoint(args.recog_model[0], model)
 
@@ -87,43 +86,20 @@ def main():
 
             # Load LM for shallow fusion
             if not args.lm_fusion:
-                # first path
                 if args.recog_lm is not None and args.recog_lm_weight > 0:
-                    conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm), 'conf.yml'))
-                    args_lm = argparse.Namespace()
-                    for k, v in conf_lm.items():
-                        setattr(args_lm, k, v)
-                    args_lm.recog_mem_len = args.recog_mem_len
-                    lm = build_lm(args_lm, wordlm=args.recog_wordlm,
-                                  lm_dict_path=os.path.join(os.path.dirname(args.recog_lm), 'dict.txt'),
-                                  asr_dict_path=os.path.join(dir_name, 'dict.txt'))
-                    load_checkpoint(args.recog_lm, lm)
-                    if args_lm.backward:
+                    lm = load_lm(args.recog_lm, args.recog_mem_len)
+                    if lm.backward:
                         model.lm_bwd = lm
                     else:
                         model.lm_fwd = lm
 
-                # second path (forward)
+                # second pass (forward)
                 if args.recog_lm_second is not None and args.recog_lm_second_weight > 0:
-                    conf_lm_second = load_config(os.path.join(os.path.dirname(args.recog_lm_second), 'conf.yml'))
-                    args_lm_second = argparse.Namespace()
-                    for k, v in conf_lm_second.items():
-                        setattr(args_lm_second, k, v)
-                    args_lm_second.recog_mem_len = args.recog_mem_len
-                    lm_second = build_lm(args_lm_second)
-                    load_checkpoint(args.recog_lm_second, lm_second)
-                    model.lm_second = lm_second
+                    model.lm_second = load_lm(args.recog_lm_second, args.recog_mem_len)
 
-                # second path (backward)
+                # second pass (backward)
                 if args.recog_lm_bwd is not None and args.recog_lm_bwd_weight > 0:
-                    conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm_bwd), 'conf.yml'))
-                    args_lm_bwd = argparse.Namespace()
-                    for k, v in conf_lm.items():
-                        setattr(args_lm_bwd, k, v)
-                    args_lm_bwd.recog_mem_len = args.recog_mem_len
-                    lm_bwd = build_lm(args_lm_bwd)
-                    load_checkpoint(args.recog_lm_bwd, lm_bwd)
-                    model.lm_bwd = lm_bwd
+                    model.lm_bwd = load_lm(args.recog_lm_bwd, args.recog_mem_len)
 
             if not args.recog_unit:
                 args.recog_unit = args.unit
