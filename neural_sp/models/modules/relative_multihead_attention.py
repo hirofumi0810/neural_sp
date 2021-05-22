@@ -15,7 +15,7 @@ from neural_sp.models.modules.headdrop import headdrop
 
 logger = logging.getLogger(__name__)
 
-torch_12_plus = LooseVersion("1.3") > LooseVersion(torch.__version__) >= LooseVersion("1.2")
+torch_12_plus = LooseVersion(torch.__version__) >= LooseVersion("1.2")
 
 
 class RelativeMultiheadAttentionMechanism(nn.Module):
@@ -69,7 +69,8 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
 
     def reset_parameters(self, bias):
         """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' %
+                    self.__class__.__name__)
         # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/multihead_attention.py
         nn.init.xavier_uniform_(self.w_key.weight, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_value.weight, gain=1 / math.sqrt(2))
