@@ -52,8 +52,8 @@ def main():
             epoch = int(args.recog_model[0].split('-')[-1])
             if args.recog_n_average > 1:
                 # Model averaging for Transformer
-                model = average_checkpoints(model, args.recog_model[0],
-                                            n_average=args.recog_n_average)
+                average_checkpoints(model, args.recog_model[0],
+                                    n_average=args.recog_n_average)
             else:
                 load_checkpoint(args.recog_model[0], model)
 

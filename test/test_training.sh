@@ -13,7 +13,9 @@ ln -sf ${root}/coverage.xml .
 ./run.sh --stage 4 --conf conf/asr/blstm_las.yaml || exit 1;
 ./score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_lstm16H8P1L_location_ss0.1_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 \
     --lm results/lm/train_char/lstm16H8P2L_emb16_tie_residual_glu_adam_lr0.001_bs1_bptt10_dropI0.1H0.1_ls0.1/model.epoch-1 \
-    --ctc_weight 0.2 --lm_weight 0.1 || exit 1;
+    --lm_second results/lm/train_char/lstm16H8P2L_emb16_tie_residual_glu_adam_lr0.001_bs1_bptt10_dropI0.1H0.1_ls0.1/model.epoch-1 \
+    --lm_bwd results/lm/train_char/lstm16H8P2L_emb16_tie_residual_glu_adam_lr0.001_bs1_bptt10_dropI0.1H0.1_ls0.1/model.epoch-1 \
+    --ctc_weight 0.2 || exit 1;
 ./plot_attention.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_lstm16H8P1L_location_ss0.1_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
 
 # resume

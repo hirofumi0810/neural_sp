@@ -6,7 +6,6 @@
 
 """Plot attention weights of attention model."""
 
-import argparse
 import copy
 import logging
 import os
@@ -14,7 +13,10 @@ import shutil
 import sys
 
 from neural_sp.bin.args_asr import parse_args_eval
-from neural_sp.bin.eval_utils import average_checkpoints
+from neural_sp.bin.eval_utils import (
+    average_checkpoints,
+    load_lm
+)
 from neural_sp.bin.plot_utils import plot_attention_weights
 from neural_sp.bin.train_utils import (
     load_checkpoint,
@@ -22,7 +24,6 @@ from neural_sp.bin.train_utils import (
     set_logger
 )
 from neural_sp.datasets.asr.build import build_dataloader
-from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
 
@@ -54,8 +55,8 @@ def main():
             epoch = int(float(args.recog_model[0].split('-')[-1]) * 10) / 10
             if args.recog_n_average > 1:
                 # Model averaging for Transformer
-                model = average_checkpoints(model, args.recog_model[0],
-                                            n_average=args.recog_n_average)
+                average_checkpoints(model, args.recog_model[0],
+                                    n_average=args.recog_n_average)
             else:
                 load_checkpoint(args.recog_model[0], model)
 
@@ -76,19 +77,13 @@ def main():
 
             # Load LM for shallow fusion
             if not args.lm_fusion:
-                # first path
                 if args.recog_lm is not None and args.recog_lm_weight > 0:
-                    conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm), 'conf.yml'))
-                    args_lm = argparse.Namespace()
-                    for k, v in conf_lm.items():
-                        setattr(args_lm, k, v)
-                    lm = build_lm(args_lm)
-                    load_checkpoint(args.recog_lm, lm)
-                    if args_lm.backward:
+                    lm = load_lm(args.recog_lm, args.recog_mem_len)
+                    if lm.backward:
                         model.lm_bwd = lm
                     else:
                         model.lm_fwd = lm
-                # NOTE: only support for first path
+                # NOTE: only support for first pass
 
             if not args.recog_unit:
                 args.recog_unit = args.unit
@@ -162,7 +157,7 @@ def main():
                     factor=args.subsample_factor,
                     ref=batch['text'][b].lower(),
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
-                    figsize=(20, 8),
+                    figsize=(24, 6),
                     ctc_probs=ctc_probs[b, :xlens[b]] if ctc_probs is not None else None,
                     ctc_topk_ids=topk_ids[b] if topk_ids is not None else None,
                     ctc_probs_sub1=ctc_probs_sub1[b, :xlens_sub1[b]] if ctc_probs_sub1 is not None else None,
