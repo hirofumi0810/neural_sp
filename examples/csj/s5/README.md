@@ -1,9 +1,10 @@
 #### Conformer LAS large + speed perturb + SpecAugment
-- conf: `conf/asr/conformer_kernel15_clamp10_hie_subsample8_las_long_ln_large.yaml`
+- conf: `conf/asr/conformer_kernel15_clamp10_hie_subsample8_las_ln_large.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
   - epoch 30
   - beam width: 10
+  - lm_weight: 0.3
   - length norm: true
 
 ##### WER
@@ -22,11 +23,12 @@
 
 
 #### Conformer LAS + speed perturb + SpecAugment
-- conf: `conf/asr/conformer_kernel15_clamp10_hie_subsample8_las_long_ln.yaml`
+- conf: `conf/asr/conformer_kernel15_clamp10_hie_subsample8_las_ln.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
   - epoch 30
   - beam width: 10
+  - lm_weight: 0.3
   - length norm: true
 
 ##### WER
