@@ -202,7 +202,7 @@ def make_args_conv(**kwargs):
           'chunk_size_left': "16", 'chunk_size_current': "8", 'subsample': "2_2_1"},
          {'poolings': "(1,1)_(2,2)"}),
         ({'enc_type': 'conv_conformer', 'streaming_type': 'mask',
-          'chunk_size_left': "16", 'chunk_size_current': "8", 'subsample': "2_2_1", 'subsample_type': 'conv1d'},
+          'chunk_size_left': "16", 'chunk_size_current': "8", 'subsample': "2_2_1"},
          {'strides': "(1,1)_(2,2)", 'poolings': "(1,1)_(1,1)"}),
     ]
 )
