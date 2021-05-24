@@ -79,10 +79,14 @@ def make_args_conv(**kwargs):
         # 2dCNN-Transformer
         ({'enc_type': 'conv_transformer'}, {}),
         ({'input_dim': 240}, {'input_dim': 240, 'in_channel': 3}),
+        ({'enc_type': 'conv_transformer'}, {'strides': "(1,1)_(2,2)", 'poolings': "(1,1)_(1,1)"}),
+        ({'enc_type': 'conv_transformer'}, {'strides': "(2,2)_(2,2)", 'poolings': "(1,1)_(1,1)"}),
         # 1dCNN-Transformer
         ({}, {'kernel_sizes': "3_3", 'strides': "1_1", 'poolings': "2_2"}),
         ({'input_dim': 240},
          {'input_dim': 240, 'in_channel': 3, 'kernel_sizes': "3_3", 'strides': "1_1", 'poolings': "2_2"}),
+        ({'enc_type': 'conv_transformer'}, {'kernel_sizes': "3_3", 'strides': "1_2", 'poolings': "1_1"}),
+        ({'enc_type': 'conv_transformer'}, {'kernel_sizes': "3_3", 'strides': "2_2", 'poolings': "1_1"}),
         # positional encoding
         ({'pe_type': 'add'}, {}),
         ({'pe_type': 'relative'}, {}),
@@ -125,7 +129,8 @@ def make_args_conv(**kwargs):
         ({'subsample': "1_2_1", 'subsample_type': 'drop'}, {}),
         ({'subsample': "1_2_1", 'subsample_type': 'concat'}, {}),
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool'}, {}),
-        ({'subsample': "1_2_1", 'subsample_type': '1dconv'}, {}),
+        ({'subsample': "1_2_1", 'subsample_type': 'mean_pool'}, {}),
+        ({'subsample': "1_2_1", 'subsample_type': 'conv1d'}, {}),
         ({'subsample': "1_2_1", 'subsample_type': 'add'}, {}),
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool', 'pe_type': 'relative'}, {}),
         ({'subsample': "1_2_1", 'enc_type': 'conv_uni_transformer'}, {}),

@@ -188,7 +188,7 @@ def build_parser():
     parser.add_argument('--subsample', type=str, default="1_1_1_1_1",
                         help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
-                        choices=['drop', 'concat', 'max_pool', '1dconv', 'add'],
+                        choices=['drop', 'concat', 'max_pool', 'mean_pool', 'conv1d', 'add'],
                         help='type of subsampling in the encoder')
     # topology (decoder)
     parser.add_argument('--dec_type', type=str, default='lstm',

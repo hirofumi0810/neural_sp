@@ -8,8 +8,10 @@ import numpy as np
 import pytest
 import torch
 
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import (
+    np2tensor,
+    pad_list
+)
 
 
 def make_args(**kwargs):
@@ -74,9 +76,9 @@ def make_args_conv(**kwargs):
     [
         # Conformer type
         ({'enc_type': 'conformer'}, {}),
-        # ({'enc_type': 'conformer_v2'}, {}),
+        ({'enc_type': 'conformer_v2'}, {}),
         ({'enc_type': 'conv_conformer'}, {}),
-        # ({'enc_type': 'conv_conformer_v2'}, {}),
+        ({'enc_type': 'conv_conformer_v2'}, {}),
         ({'input_dim': 240}, {'input_dim': 240, 'in_channel': 3}),
         # PE type
         ({'pe_type': 'relative_xl'}, {}),
@@ -116,7 +118,8 @@ def make_args_conv(**kwargs):
         ({'subsample': "1_2_1", 'subsample_type': 'drop'}, {}),
         ({'subsample': "1_2_1", 'subsample_type': 'concat'}, {}),
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool'}, {}),
-        ({'subsample': "1_2_1", 'subsample_type': '1dconv'}, {}),
+        ({'subsample': "1_2_1", 'subsample_type': 'mean_pool'}, {}),
+        ({'subsample': "1_2_1", 'subsample_type': 'conv1d'}, {}),
         ({'subsample': "1_2_1", 'subsample_type': 'add'}, {}),
         ({'subsample': "1_2_1", 'enc_type': 'conv_uni_conformer'}, {}),
         ({'subsample': "1_2_1", 'streaming_type': 'reshape',

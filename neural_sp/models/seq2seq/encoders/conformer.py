@@ -40,7 +40,7 @@ class ConformerEncoder(TransformerEncoder):
         dropout_layer (float): LayerDrop probability for layers
         subsample (List): subsample in the corresponding Conformer layers
             ex.) [1, 2, 2, 1] means that subsample is conducted in the 2nd and 3rd layers.
-        subsample_type (str): drop/concat/max_pool/1dconv
+        subsample_type (str): subsampling type in intermediate layers
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         frontend_conv (nn.Module): frontend CNN module

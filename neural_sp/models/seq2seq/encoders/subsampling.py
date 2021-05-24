@@ -53,23 +53,19 @@ class ConcatSubsampler(nn.Module):
 
 
 class Conv1dSubsampler(nn.Module):
-    """Subsample by 1d convolution and max-pooling."""
+    """Subsample by stride in 1d convolution."""
 
-    def __init__(self, subsampling_factor, n_units, conv_kernel_size=5):
+    def __init__(self, subsampling_factor, n_units, kernel_size=3):
         super(Conv1dSubsampler, self).__init__()
 
-        assert conv_kernel_size % 2 == 1, "Kernel size should be odd for 'same' conv."
+        assert kernel_size % 2 == 1, "Kernel size should be odd for 'same' conv."
         self.factor = subsampling_factor
         if subsampling_factor > 1:
             self.conv1d = nn.Conv1d(in_channels=n_units,
                                     out_channels=n_units,
-                                    kernel_size=conv_kernel_size,
-                                    stride=1,
-                                    padding=(conv_kernel_size - 1) // 2)
-            self.pool = nn.MaxPool1d(kernel_size=subsampling_factor,
-                                     stride=subsampling_factor,
-                                     padding=0,
-                                     ceil_mode=True)
+                                    kernel_size=kernel_size,
+                                    stride=subsampling_factor,
+                                    padding=(kernel_size - 1) // 2)
 
     def forward(self, xs, xlens, batch_first=True):
         """Forward pass.
@@ -87,13 +83,14 @@ class Conv1dSubsampler(nn.Module):
             return xs, xlens
 
         if batch_first:
-            xs = torch.relu(self.conv1d(xs.transpose(2, 1)))
-            xs = self.pool(xs).transpose(2, 1).contiguous()
+            xs = self.conv1d(xs.transpose(2, 1))
+            xs = xs.transpose(2, 1).contiguous()
         else:
-            xs = torch.relu(self.conv1d(xs.permute(1, 2, 0)))
-            xs = self.pool(xs).permute(2, 0, 1).contiguous()
+            xs = self.conv1d(xs.permute(1, 2, 0))
+            xs = xs.permute(2, 0, 1).contiguous()
+        xs = torch.relu(xs)
 
-        xlens = update_lens_1d(xlens, self.pool)
+        xlens = update_lens_1d(xlens, self.conv1d)
         return xs, xlens
 
 
@@ -175,15 +172,52 @@ class AddSubsampler(nn.Module):
         return xs, xlens
 
 
-class MaxpoolSubsampler(nn.Module):
+class MaxPoolSubsampler(nn.Module):
     """Subsample by max-pooling input frames."""
 
     def __init__(self, subsampling_factor):
-        super(MaxpoolSubsampler, self).__init__()
+        super(MaxPoolSubsampler, self).__init__()
 
         self.factor = subsampling_factor
         if subsampling_factor > 1:
             self.pool = nn.MaxPool1d(kernel_size=subsampling_factor,
+                                     stride=subsampling_factor,
+                                     padding=0,
+                                     ceil_mode=True)
+
+    def forward(self, xs, xlens, batch_first=True):
+        """Forward pass.
+
+        Args:
+            xs (FloatTensor): `[B, T, F]` or `[T, B, F]`
+            xlens (IntTensor): `[B]` (on CPU)
+            batch_first (bool): operate batch-first tensor
+        Returns:
+            xs (FloatTensor): `[B, T', F']` or `[T', B, F']`
+            xlens (IntTensor): `[B]` (on CPU)
+
+        """
+        if self.factor == 1:
+            return xs, xlens
+
+        if batch_first:
+            xs = self.pool(xs.transpose(2, 1)).transpose(2, 1).contiguous()
+        else:
+            xs = self.pool(xs.permute(1, 2, 0)).permute(2, 0, 1).contiguous()
+
+        xlens = update_lens_1d(xlens, self.pool)
+        return xs, xlens
+
+
+class MeanPoolSubsampler(nn.Module):
+    """Subsample by mean-pooling input frames."""
+
+    def __init__(self, subsampling_factor):
+        super(MeanPoolSubsampler, self).__init__()
+
+        self.factor = subsampling_factor
+        if subsampling_factor > 1:
+            self.pool = nn.AvgPool1d(kernel_size=subsampling_factor,
                                      stride=subsampling_factor,
                                      padding=0,
                                      ceil_mode=True)

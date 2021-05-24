@@ -89,6 +89,9 @@ class ConvEncoder(EncoderBase):
 
         # calculate subsampling factor
         self._factor = 1
+        if strides:
+            for s in strides:
+                self._factor *= s if is_1dconv else s[0]
         if poolings:
             for p in poolings:
                 self._factor *= p if is_1dconv else p[0]
@@ -130,12 +133,17 @@ class ConvEncoder(EncoderBase):
             dir_name += tmp
         return dir_name
 
+    @property
+    def context_size(self):
+        return self._context_size
+
     def calculate_context_size(self, kernel_sizes, strides, poolings):
         self._context_size = 0
         context_size_bottom = 0
         factor = 1
         for lth in range(len(kernel_sizes)):
             kernel_size = kernel_sizes[lth] if self.is_1dconv else kernel_sizes[lth][0]
+            stride = strides[lth] if self.is_1dconv else strides[lth][0]
             pooling = poolings[lth] if self.is_1dconv else poolings[lth][0]
 
             lookahead = (kernel_size - 1) // 2
@@ -147,12 +155,8 @@ class ConvEncoder(EncoderBase):
                 context_size_bottom = self._context_size
             else:
                 self._context_size += context_size_bottom * lookahead
-                context_size_bottom *= pooling
-            factor *= pooling
-
-    @property
-    def context_size(self):
-        return self._context_size
+                context_size_bottom *= (stride * pooling)
+            factor *= (stride * pooling)
 
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""
@@ -207,7 +211,7 @@ class Conv1dBlock(EncoderBase):
         self.conv1 = nn.Conv1d(in_channels=in_channel,
                                out_channels=out_channel,
                                kernel_size=kernel_size,
-                               stride=stride,
+                               stride=1,
                                padding=1)
         self._odim = update_lens_1d(torch.IntTensor([in_channel]), self.conv1)[0].item()
         if normalization == 'batch_norm':
@@ -299,7 +303,7 @@ class Conv2dBlock(EncoderBase):
         self.conv1 = nn.Conv2d(in_channels=in_channel,
                                out_channels=out_channel,
                                kernel_size=tuple(kernel_size),
-                               stride=tuple(stride),
+                               stride=(1, 1),
                                padding=(1, 1))
         self._odim = update_lens_2d(torch.IntTensor([input_dim]), self.conv1, dim=1)[0].item()
         if normalization == 'batch_norm':
@@ -429,7 +433,7 @@ def update_lens_1d(seq_lens, layer):
     if seq_lens is None:
         return seq_lens
     assert isinstance(seq_lens, torch.IntTensor)
-    assert type(layer) in [nn.Conv1d, nn.MaxPool1d]
+    assert type(layer) in [nn.Conv1d, nn.MaxPool1d, nn.AvgPool1d]
     seq_lens = [_update_1d(seq_len, layer) for seq_len in seq_lens]
     seq_lens = torch.IntTensor(seq_lens)
     return seq_lens

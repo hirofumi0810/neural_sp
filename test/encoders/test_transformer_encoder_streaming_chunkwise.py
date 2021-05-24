@@ -150,6 +150,10 @@ def make_args_conv(**kwargs):
           'chunk_size_left': "16", 'chunk_size_current': "8"},
          {'channels': "32", 'kernel_sizes': "(3,3)",
           'strides': "(1,1)", 'poolings': "(2,2)"}),
+        ({'enc_type': 'conv_conformer', 'streaming_type': 'mask',
+          'chunk_size_left': "16", 'chunk_size_current': "8"},
+         {'channels': "32", 'kernel_sizes': "(3,3)",
+          'strides': "(2,2)", 'poolings': "(1,1)"}),  # Conformer+ConvSubsample
         ({'enc_type': 'conv_transformer', 'streaming_type': 'reshape',
           'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"},
          {'channels': "32", 'kernel_sizes': "(3,3)",
@@ -165,6 +169,10 @@ def make_args_conv(**kwargs):
           'chunk_size_left': "16", 'chunk_size_current': "8"}, {}),
         ({'enc_type': 'conv_conformer', 'streaming_type': 'mask',
           'chunk_size_left': "16", 'chunk_size_current': "8"}, {}),
+        ({'enc_type': 'conv_conformer', 'streaming_type': 'mask',
+          'chunk_size_left': "16", 'chunk_size_current': "8"},
+         {'channels': "32_32", 'kernel_sizes': "(3,3)_(3,3)",
+          'strides': "(2,2)_(2,2)", 'poolings': "(1,1)_(1,1)"}),  # Conformer+ConvSubsample
         ({'enc_type': 'conv_conformer_v2', 'streaming_type': 'mask',
           'chunk_size_left': "16", 'chunk_size_current': "8"}, {}),
         ({'enc_type': 'conv_transformer', 'streaming_type': 'reshape',
@@ -181,6 +189,10 @@ def make_args_conv(**kwargs):
           'chunk_size_left': "16", 'chunk_size_current': "8"},
          {'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'strides': "(1,1)_(1,1)_(1,1)", 'poolings': "(2,2)_(2,2)_(2,2)"}),
+        ({'enc_type': 'conv_conformer', 'streaming_type': 'mask',
+          'chunk_size_left': "16", 'chunk_size_current': "8"},
+         {'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
+          'strides': "(2,2)_(2,2)_(2,2)", 'poolings': "(1,1)_(1,1)_(1,1)"}),  # Conformer+ConvSubsample
         ({'enc_type': 'conv_transformer', 'streaming_type': 'reshape',
           'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"},
          {'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
@@ -189,6 +201,9 @@ def make_args_conv(**kwargs):
         ({'enc_type': 'conv_conformer', 'streaming_type': 'mask',
           'chunk_size_left': "16", 'chunk_size_current': "8", 'subsample': "2_2_1"},
          {'poolings': "(1,1)_(2,2)"}),
+        ({'enc_type': 'conv_conformer', 'streaming_type': 'mask',
+          'chunk_size_left': "16", 'chunk_size_current': "8", 'subsample': "2_2_1"},
+         {'strides': "(1,1)_(2,2)", 'poolings': "(1,1)_(1,1)"}),
     ]
 )
 def test_forward_streaming_chunkwise(args, args_conv):
