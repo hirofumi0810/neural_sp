@@ -1335,7 +1335,7 @@ class RNNDecoder(DecoderBase):
                              'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1],
                                                     dstates['dstate'][1][:, j:j + 1])},
                              'ilm_dstates': {'dstate': (ilm_dstates['dstate'][0][:, j:j + 1],
-                                                        ilm_dstates['dstate'][1][:, j:j + 1])},
+                                                        ilm_dstates['dstate'][1][:, j:j + 1])} if ilm_weight > 0 else None,
                              'cv': cv[j:j + 1],
                              'aws': beam['aws'] + [aw[j:j + 1]],
                              'myu': attn_state['myu'][j:j + 1] if self.attn_type in ['gmm', 'sagmm'] else None,
@@ -1457,7 +1457,7 @@ class RNNDecoder(DecoderBase):
 
         return nbest_hyps_idx, aws, scores
 
-    def batchfy_beam(self, hyps, i):
+    def batchfy_beam(self, hyps, i, ilm_weight):
         """Batchfy all the active hypetheses in an utternace for efficient matrix multiplication."""
         y = torch.zeros((len(hyps), 1), dtype=torch.int64, device=self.device)
         for j, beam in enumerate(hyps):
@@ -1470,7 +1470,13 @@ class RNNDecoder(DecoderBase):
         hxs = torch.cat([beam['dstates']['dstate'][0] for beam in hyps], dim=1)
         cxs = torch.cat([beam['dstates']['dstate'][1] for beam in hyps], dim=1)
         dstates = {'dstate': (hxs, cxs)}
-        return y, cv, aw, dstates
+        if ilm_weight > 0:
+            ilm_hxs = torch.cat([beam['ilm_dstates']['dstate'][0] for beam in hyps], dim=1)
+            ilm_cxs = torch.cat([beam['ilm_dstates']['dstate'][1] for beam in hyps], dim=1)
+            ilm_dstates = {'dstate': (ilm_hxs, ilm_cxs)}
+        else:
+            ilm_dstates = None
+        return y, cv, aw, dstates, ilm_dstates
 
     def beam_search_block_sync(self, eouts, params, helper, idx2token,
                                hyps, hyps_nobd, lm, ctc_log_probs=None, speaker=None,
@@ -1484,6 +1490,7 @@ class RNNDecoder(DecoderBase):
         lp_weight = params.get('recog_length_penalty')
         length_norm = params.get('recog_length_norm')
         lm_weight = params.get('recog_lm_weight')
+        ilm_weight = params.get('recog_ilm_weight')
         eos_threshold = params.get('recog_eos_threshold')
         lm_state_CO = params.get('recog_lm_state_carry_over')
         softmax_smoothing = params.get('recog_softmax_smoothing')
@@ -1496,6 +1503,7 @@ class RNNDecoder(DecoderBase):
             dstates = self.zero_state(1)
             lmstate = None
             ctc_state = None
+            ilm_dstates = self.zero_state(1) if ilm_weight > 0 else None
 
             if speaker is not None:
                 if lm_state_CO and speaker == self.prev_spk:
@@ -1518,7 +1526,8 @@ class RNNDecoder(DecoderBase):
 
             self.n_frames = 0
             self.key_tail = None
-            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state)
+            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state,
+                                        ilm_dstates=ilm_dstates)
         else:
             hyps += hyps_nobd
             hyps_nobd = []
@@ -1534,7 +1543,7 @@ class RNNDecoder(DecoderBase):
                 break
 
             # batchfy all hypotheses for batch decoding
-            y, cv, aw, dstates = self.batchfy_beam(hyps, i)
+            y, cv, aw, dstates, ilm_dstates = self.batchfy_beam(hyps, i, ilm_weight)
 
             # Update LM states for LM fusion
             lmout, lmstate, scores_lm = helper.update_rnnlm_state_batch(
@@ -1544,6 +1553,11 @@ class RNNDecoder(DecoderBase):
             dstates, cv, aw, _, attn_v = self.decode_step(
                 eouts, dstates, cv, y_emb, None, aw, lmout, streaming=True)
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)
+            if ilm_weight > 0:
+                ilm_dstates, _, _, _, ilm_attn_v = self.decode_step(
+                    eouts.new_zeros(eouts.size()), ilm_dstates, cv.new_zeros(cv.size()),
+                    y_emb, None, None, lmout, streaming=True, internal_lm=True)
+                scores_ilm = torch.log_softmax(self.output(ilm_attn_v).squeeze(1) * softmax_smoothing, dim=1)
 
             new_hyps = []
             for j, beam in enumerate(hyps):
@@ -1555,7 +1569,12 @@ class RNNDecoder(DecoderBase):
 
                 # Attention scores
                 total_scores_att = beam['score_att'] + scores_att[j:j + 1]
+                if ilm_weight > 0:
+                    total_scores_ilm = beam['score_ilm'] + scores_ilm[j:j + 1]
+                else:
+                    total_scores_ilm = eouts.new_zeros(1, self.vocab)
                 total_scores = total_scores_att * (1 - ctc_weight)
+                total_scores -= total_scores_ilm * ilm_weight * (1 - ctc_weight)
 
                 # Add LM score <after> top-K selection
                 total_scores_topk, topk_ids = torch.topk(
@@ -1601,10 +1620,13 @@ class RNNDecoder(DecoderBase):
                         {'hyp': beam['hyp'] + [idx],
                          'score': total_score,
                          'score_att': total_scores_att[0, idx].item(),
+                         'score_ilm': total_scores_ilm[0, idx].item(),
                          'score_ctc': total_scores_ctc[k].item(),
                          'score_lm': total_scores_lm[k].item(),
                          'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1],
                                                 dstates['dstate'][1][:, j:j + 1])},
+                         'ilm_dstates': {'dstate': (ilm_dstates['dstate'][0][:, j:j + 1],
+                                                    ilm_dstates['dstate'][1][:, j:j + 1])} if ilm_weight > 0 else None,
                          'cv': cv[j:j + 1],
                          'aws': beam['aws'] + [aw[j:j + 1]],
                          'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1],
@@ -1648,6 +1670,8 @@ class RNNDecoder(DecoderBase):
                             merged_hyps[k]['score'])
                 logger.info('log prob (hyp, att): %.7f' %
                             (merged_hyps[k]['score_att'] * (1 - ctc_weight)))
+                logger.info('log prob (hyp, ilm): %.7f' %
+                            (merged_hyps[k]['score_ilm'] * (1 - ctc_weight) * ilm_weight))
                 if self.ctc_prefix_scorer is not None:
                     logger.info('log prob (hyp, ctc): %.7f' %
                                 (merged_hyps[k]['score_ctc'] * ctc_weight))
