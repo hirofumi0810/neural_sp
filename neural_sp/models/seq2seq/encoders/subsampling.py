@@ -172,15 +172,52 @@ class AddSubsampler(nn.Module):
         return xs, xlens
 
 
-class MaxpoolSubsampler(nn.Module):
+class MaxPoolSubsampler(nn.Module):
     """Subsample by max-pooling input frames."""
 
     def __init__(self, subsampling_factor):
-        super(MaxpoolSubsampler, self).__init__()
+        super(MaxPoolSubsampler, self).__init__()
 
         self.factor = subsampling_factor
         if subsampling_factor > 1:
             self.pool = nn.MaxPool1d(kernel_size=subsampling_factor,
+                                     stride=subsampling_factor,
+                                     padding=0,
+                                     ceil_mode=True)
+
+    def forward(self, xs, xlens, batch_first=True):
+        """Forward pass.
+
+        Args:
+            xs (FloatTensor): `[B, T, F]` or `[T, B, F]`
+            xlens (IntTensor): `[B]` (on CPU)
+            batch_first (bool): operate batch-first tensor
+        Returns:
+            xs (FloatTensor): `[B, T', F']` or `[T', B, F']`
+            xlens (IntTensor): `[B]` (on CPU)
+
+        """
+        if self.factor == 1:
+            return xs, xlens
+
+        if batch_first:
+            xs = self.pool(xs.transpose(2, 1)).transpose(2, 1).contiguous()
+        else:
+            xs = self.pool(xs.permute(1, 2, 0)).permute(2, 0, 1).contiguous()
+
+        xlens = update_lens_1d(xlens, self.pool)
+        return xs, xlens
+
+
+class MeanPoolSubsampler(nn.Module):
+    """Subsample by mean-pooling input frames."""
+
+    def __init__(self, subsampling_factor):
+        super(MeanPoolSubsampler, self).__init__()
+
+        self.factor = subsampling_factor
+        if subsampling_factor > 1:
+            self.pool = nn.AvgPool1d(kernel_size=subsampling_factor,
                                      stride=subsampling_factor,
                                      padding=0,
                                      ceil_mode=True)

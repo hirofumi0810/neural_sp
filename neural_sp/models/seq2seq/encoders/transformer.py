@@ -22,7 +22,8 @@ from neural_sp.models.seq2seq.encoders.subsampling import (
     ConcatSubsampler,
     Conv1dSubsampler,
     DropSubsampler,
-    MaxpoolSubsampler
+    MaxPoolSubsampler,
+    MeanPoolSubsampler
 )
 from neural_sp.models.seq2seq.encoders.transformer_block import TransformerEncoderBlock
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
@@ -59,7 +60,7 @@ class TransformerEncoder(EncoderBase):
         dropout_layer (float): LayerDrop probability for layers
         subsample (List): subsample in the corresponding Transformer layers
             ex.) [1, 2, 2, 1] means that subsample is conducted in the 2nd and 3rd layers.
-        subsample_type (str): drop/concat/max_pool/1dconv
+        subsample_type (str): subsampling type in intermediate layers
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         frontend_conv (nn.Module): frontend CNN module
@@ -124,6 +125,7 @@ class TransformerEncoder(EncoderBase):
         self.lc_bidir = self.N_c > 0 and enc_type != 'conv' and 'uni' not in enc_type
         self.cnn_lookahead = self.unidir or enc_type == 'conv'
         self.streaming_type = streaming_type if self.lc_bidir else ''
+        self.causal = self.unidir or self.streaming_type == 'mask'
         # -: past context
         # *: current context
         # +: future context
@@ -183,7 +185,10 @@ class TransformerEncoder(EncoderBase):
         if np.prod(self.subsample_factors) > 1:
             self._factor *= np.prod(self.subsample_factors)
             if subsample_type == 'max_pool':
-                self.subsample_layers = nn.ModuleList([MaxpoolSubsampler(factor)
+                self.subsample_layers = nn.ModuleList([MaxPoolSubsampler(factor)
+                                                       for factor in self.subsample_factors])
+            elif subsample_type == 'mean_pool':
+                self.subsample_layers = nn.ModuleList([MeanPoolSubsampler(factor)
                                                        for factor in self.subsample_factors])
             elif subsample_type == 'concat':
                 self.subsample_layers = nn.ModuleList([ConcatSubsampler(factor, self._odim)
@@ -191,7 +196,8 @@ class TransformerEncoder(EncoderBase):
             elif subsample_type == 'drop':
                 self.subsample_layers = nn.ModuleList([DropSubsampler(factor)
                                                        for factor in self.subsample_factors])
-            elif subsample_type == '1dconv':
+            elif subsample_type == 'conv1d':
+                assert not self.causal
                 self.subsample_layers = nn.ModuleList([Conv1dSubsampler(factor, self._odim)
                                                        for factor in self.subsample_factors])
             elif subsample_type == 'add':

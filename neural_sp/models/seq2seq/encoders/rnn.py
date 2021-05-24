@@ -22,7 +22,8 @@ from neural_sp.models.seq2seq.encoders.subsampling import (
     ConcatSubsampler,
     Conv1dSubsampler,
     DropSubsampler,
-    MaxpoolSubsampler
+    MaxPoolSubsampler,
+    MeanPoolSubsampler
 )
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
 
@@ -47,7 +48,7 @@ class RNNEncoder(EncoderBase):
         dropout (float): dropout probability for hidden-hidden connection
         subsample (list): subsample in the corresponding RNN layers
             ex.) [1, 2, 2, 1] means that subsample is conducted in the 2nd and 3rd layers.
-        subsample_type (str): drop/concat/max_pool/1dconv
+        subsample_type (str): subsampling type in intermediate layers
         n_stacks (int): number of frames to stack
         n_splices (int): number of frames to splice
         frontend_conv (nn.Module): frontend CNN module
@@ -173,12 +174,14 @@ class RNNEncoder(EncoderBase):
                 # subsample
                 if np.prod(subsamples) > 1:
                     if subsample_type == 'max_pool':
-                        self.subsample += [MaxpoolSubsampler(subsamples[lth])]
+                        self.subsample += [MaxPoolSubsampler(subsamples[lth])]
+                    elif subsample_type == 'mean_pool':
+                        self.subsample += [MeanPoolSubsampler(subsamples[lth])]
                     elif subsample_type == 'concat':
                         self.subsample += [ConcatSubsampler(subsamples[lth], self._odim)]
                     elif subsample_type == 'drop':
                         self.subsample += [DropSubsampler(subsamples[lth])]
-                    elif subsample_type == '1dconv':
+                    elif subsample_type == 'conv1d':
                         self.subsample += [Conv1dSubsampler(subsamples[lth], self._odim)]
                     elif subsample_type == 'add':
                         self.subsample += [AddSubsampler(subsamples[lth])]
