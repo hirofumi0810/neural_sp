@@ -133,7 +133,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### Librispeech (WER)
 | Model          | dev-clean | dev-other | test-clean | test-other |
 | -------------- | --------- | --------- | ---------- | ---------- |
-| Conformer LAS  | 2.0       | 4.8       | 2.1        | 5.2        |
+| Conformer LAS  | 1.9       | 4.6       | 2.1        | 4.9        |
 | Transformer    | 2.1       | 5.3       | 2.4        | 5.7        |
 | BLSTM LAS      | 2.5       | 7.2       | 2.6        | 7.5        |
 | BLSTM RNN-T    | 2.9       | 8.5       | 3.2        | 9.0        |
@@ -146,7 +146,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### TEDLIUM2 (WER)
 | Model          | dev   | test |
 | -------------- | ----  | ---- |
-| Conformer LAS  |  7.1  |  7.1 |
+| Conformer LAS  |  7.0  |  6.8 |
 | BLSTM LAS      |  8.1  |  7.5 |
 | LC-BLSTM RNN-T |  8.0  |  7.7 |
 | LC-BLSTM MoChA | 10.3  |  8.6 |
