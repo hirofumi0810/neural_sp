@@ -54,7 +54,6 @@ def make_args(**kwargs):
         external_lm=None,
         lm_fusion='',
         lm_init=False,
-        ilm_weight=0.0,
         backward=False,
         global_weight=1.0,
         mtl_per_batch=False,

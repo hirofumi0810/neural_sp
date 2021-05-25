@@ -353,6 +353,8 @@ def build_parser():
                         help='threshold for emitting a EOS token')
     parser.add_argument('--recog_lm_weight', type=float, default=0.0,
                         help='weight of first-pass LM score')
+    parser.add_argument('--recog_ilm_weight', type=float, default=0.0,
+                        help='weight of internla LM score')
     parser.add_argument('--recog_lm_second_weight', type=float, default=0.0,
                         help='weight of second-pass LM score')
     parser.add_argument('--recog_lm_bwd_weight', type=float, default=0.0,
