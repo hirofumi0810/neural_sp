@@ -188,6 +188,7 @@ def make_decode_params(**kwargs):
         recog_beam_width=1,
         recog_ctc_weight=0.0,
         recog_lm_weight=0.0,
+        recog_ilm_weight=0.0,
         recog_lm_second_weight=0.0,
         recog_lm_bwd_weight=0.0,
         recog_cache_embedding=True,
@@ -264,6 +265,7 @@ def make_args_rnnlm(**kwargs):
         (False, '', {'recog_coverage_penalty': 0.1, 'recog_gnmt_decoding': True}),
         # shallow fusion
         (False, '', {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
+        (False, '', {'recog_beam_width': 4, 'recog_ilm_weight': 0.1}),
         (False, '', {'recog_beam_width': 4, 'recog_lm_weight': 0.1, 'recog_cache_embedding': False}),
         # cold fusion
         (False, 'cold', {'recog_beam_width': 4}),
@@ -421,6 +423,7 @@ def test_decoding(backward, lm_fusion, params):
         ({'recog_beam_width': 4}),
         # shallow fusion
         ({'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
+        ({'recog_beam_width': 4, 'recog_ilm_weight': 0.1}),
         ({'recog_beam_width': 4, 'recog_softmax_smoothing': 0.8}),
     ]
 )

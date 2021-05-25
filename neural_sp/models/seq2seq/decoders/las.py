@@ -170,7 +170,8 @@ class RNNDecoder(DecoderBase):
 
         # for cache
         self.prev_spk = ''
-        self.dstates_final = None
+        self.dstates_final = None  # for discourse-aware training
+        self.asrstate_final = None  # for streaming decoding
         self.lmstate_final = None
         self.trflm_mem = None
         self.embed_cache = None
@@ -189,6 +190,8 @@ class RNNDecoder(DecoderBase):
                            lsm_prob=ctc_lsm_prob,
                            fc_list=ctc_fc_list,
                            param_init=param_init)
+        else:
+            self.ctc = None
 
         if self.att_weight > 0:
             # Attention layer
@@ -697,6 +700,12 @@ class RNNDecoder(DecoderBase):
         if return_logits:
             return logits
 
+        # Compute XE sequence loss (+ label smoothing)
+        loss, ppl = cross_entropy_lsm(logits, ys_out, self.lsm_prob, self.pad, self.training)
+
+        # Compute token-level accuracy in teacher-forcing
+        acc = compute_accuracy(logits, ys_out, self.pad)
+
         # for attention plot
         aws = torch.cat(aws, dim=2)  # `[B, H, L, T]`
         if not self.training:
@@ -709,11 +718,6 @@ class RNNDecoder(DecoderBase):
             if len(p_chooses) > 0:
                 self.aws_dict['xy_p_choose'] = tensor2np(torch.cat(p_chooses, dim=2))  # `[B, H, L, T]`
 
-        n_heads = aws.size(1)  # mono
-
-        # Compute XE sequence loss (+ label smoothing)
-        loss, ppl = cross_entropy_lsm(logits, ys_out, self.lsm_prob, self.pad, self.training)
-
         # Attention padding
         if self.attn_type == 'mocha' or (ctc_trigger_points is not None or forced_trigger_points is not None):
             aws = aws.masked_fill_(tgt_mask.unsqueeze(1).expand_as(aws) == 0, 0)
@@ -722,8 +726,8 @@ class RNNDecoder(DecoderBase):
         # Quantity loss
         loss_quantity = 0.
         if self.attn_type == 'mocha':
-            # Average over all heads
-            n_tokens_pred = aws.sum(3).sum(2).sum(1) / n_heads  # `[B]`
+            n_tokens_pred = aws.sum(3).sum(2).sum(1) / aws.size(1)  # `[B]`
+            # NOTE: average over all heads
             n_tokens_ref = tgt_mask.squeeze(2).sum(1).float()  # `[B]`
             # NOTE: count <eos> tokens
             loss_quantity = torch.mean(torch.abs(n_tokens_pred - n_tokens_ref))
@@ -760,17 +764,18 @@ class RNNDecoder(DecoderBase):
             kl_loss = distillation(logits, teacher_logits, ylens, temperature=5.0)
             loss = loss * (1 - self.distil_weight) + kl_loss * self.distil_weight
 
-        # Compute token-level accuracy in teacher-forcing
-        acc = compute_accuracy(logits, ys_out, self.pad)
-
         return loss, acc, ppl, loss_quantity, loss_latency
 
     def decode_step(self, eouts, dstates, cv, y_emb, mask, aw, lmout,
-                    mode='hard', trigger_points=None, cache=True, streaming=False):
+                    cache=True, mode='hard', trigger_points=None, streaming=False,
+                    internal_lm=False):
         dstates = self.recurrency(torch.cat([y_emb, cv], dim=-1), dstates['dstate'])
-        cv, aw, attn_state = self.score(eouts, eouts, dstates['dout_score'], mask, aw,
-                                        cache=cache, mode=mode, trigger_points=trigger_points,
-                                        streaming=streaming)
+        if internal_lm:
+            attn_state = None
+        else:
+            cv, aw, attn_state = self.score(eouts, eouts, dstates['dout_score'], mask, aw,
+                                            cache=cache, mode=mode, trigger_points=trigger_points,
+                                            streaming=streaming)
         attn_v = self.generate(cv, dstates['dout_gen'], lmout)
         return dstates, cv, aw, attn_state, attn_v
 
@@ -1013,7 +1018,7 @@ class RNNDecoder(DecoderBase):
             self.embed_cache = self.embed_token_id(indices)
 
     def initialize_beam(self, hyp, dstates, cv, lmstate, ctc_state,
-                        ensmbl_decs=[]):
+                        ensmbl_decs=[], ilm_dstates=None):
         """Initialize beam."""
         # Ensemble initialization
         ensmbl_dstate, ensmbl_cv = [], []
@@ -1027,7 +1032,9 @@ class RNNDecoder(DecoderBase):
                  'score_att': 0.,
                  'score_ctc': 0.,
                  'score_lm': 0.,
+                 'score_ilm': 0.,
                  'dstates': dstates,
+                 'ilm_dstates': ilm_dstates,
                  'cv': cv,
                  'aws': [None],
                  'myu': None,
@@ -1090,6 +1097,7 @@ class RNNDecoder(DecoderBase):
         length_norm = params.get('recog_length_norm')
         cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
+        ilm_weight = params.get('recog_ilm_weight')
         lm_weight_second = params.get('recog_lm_second_weight')
         lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
         gnmt_decoding = params.get('recog_gnmt_decoding')
@@ -1122,6 +1130,7 @@ class RNNDecoder(DecoderBase):
             dstates = self.zero_state(1)
             lmstate = None
             ctc_state = None
+            ilm_dstates = self.zero_state(1)
 
             # For joint CTC-Attention decoding
             ctc_prefix_scorer = None
@@ -1146,7 +1155,7 @@ class RNNDecoder(DecoderBase):
 
             end_hyps = []
             hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state,
-                                        ensmbl_decs)
+                                        ensmbl_decs, ilm_dstates)
             streamable_global = True
             ymax = math.ceil(elens[b] * max_len_ratio)
             for i in range(ymax):
@@ -1167,6 +1176,10 @@ class RNNDecoder(DecoderBase):
                 hxs = torch.cat([beam['dstates']['dstate'][0] for beam in hyps], dim=1)
                 cxs = torch.cat([beam['dstates']['dstate'][1] for beam in hyps], dim=1)
                 dstates = {'dstate': (hxs, cxs)}
+                if ilm_weight > 0:
+                    ilm_hxs = torch.cat([beam['ilm_dstates']['dstate'][0] for beam in hyps], dim=1)
+                    ilm_cxs = torch.cat([beam['ilm_dstates']['dstate'][1] for beam in hyps], dim=1)
+                    ilm_dstates = {'dstate': (ilm_hxs, ilm_cxs)}
 
                 # Update LM states for LM fusion
                 lmout, lmstate, scores_lm = None, None, None
@@ -1185,6 +1198,12 @@ class RNNDecoder(DecoderBase):
                 dstates, cv, aw, attn_state, attn_v = self.decode_step(
                     eouts_b_i, dstates, cv, y_emb, None, aw, lmout)
                 probs = torch.softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)
+
+                if ilm_weight > 0:
+                    ilm_dstates, _, _, _, ilm_attn_v = self.decode_step(
+                        eouts.new_zeros(eouts_b_i.size()), ilm_dstates, cv.new_zeros(cv.size()),
+                        y_emb, None, None, lmout, internal_lm=True)
+                    scores_ilm = torch.log_softmax(self.output(ilm_attn_v).squeeze(1) * softmax_smoothing, dim=1)
 
                 # for ensemble
                 ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
@@ -1218,12 +1237,17 @@ class RNNDecoder(DecoderBase):
 
                     # Attention scores
                     total_scores_att = beam['score_att'] + scores_att[j:j + 1]
+                    if ilm_weight > 0:
+                        total_scores_ilm = beam['score_ilm'] + scores_ilm[j:j + 1]
+                    else:
+                        total_scores_ilm = eouts.new_zeros(1, self.vocab)
                     total_scores = total_scores_att * (1 - ctc_weight)
+                    total_scores -= total_scores_ilm * ilm_weight * (1 - ctc_weight)
                     total_scores_topk, topk_ids = torch.topk(
                         total_scores, k=beam_width, dim=1, largest=True, sorted=True)
 
                     # Add LM score <after> top-K selection
-                    if lm is not None:
+                    if lm is not None or self.lm is not None:
                         total_scores_lm = beam['score_lm'] + scores_lm[j, -1, topk_ids[0]]
                         total_scores_topk += total_scores_lm * lm_weight
                     else:
@@ -1304,11 +1328,14 @@ class RNNDecoder(DecoderBase):
                             {'hyp': beam['hyp'] + [idx],
                              'score': total_score,
                              'score_att': total_scores_att[0, idx].item(),
+                             'score_ilm': total_scores_ilm[0, idx].item(),
                              'score_cp': cp,
                              'score_ctc': total_scores_ctc[k].item(),
                              'score_lm': total_scores_lm[k].item(),
                              'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1],
                                                     dstates['dstate'][1][:, j:j + 1])},
+                             'ilm_dstates': {'dstate': (ilm_dstates['dstate'][0][:, j:j + 1],
+                                                        ilm_dstates['dstate'][1][:, j:j + 1])} if ilm_weight > 0 else None,
                              'cv': cv[j:j + 1],
                              'aws': beam['aws'] + [aw[j:j + 1]],
                              'myu': attn_state['myu'][j:j + 1] if self.attn_type in ['gmm', 'sagmm'] else None,
@@ -1332,8 +1359,8 @@ class RNNDecoder(DecoderBase):
             # Global pruning
             if len(end_hyps) == 0:
                 end_hyps = hyps[:]
-            elif len(end_hyps) < nbest and nbest > 1:
-                end_hyps.extend(hyps[:nbest - len(end_hyps)])
+            elif len(end_hyps) < beam_width:
+                end_hyps.extend(hyps[:beam_width - len(end_hyps)])
 
             # forward/backward second-pass LM rescoring
             end_hyps = helper.lm_rescoring(end_hyps, lm_second, lm_weight_second,
@@ -1364,12 +1391,14 @@ class RNNDecoder(DecoderBase):
                     logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
                     logger.info('log prob (hyp, att): %.7f' %
                                 (end_hyps[k]['score_att'] * (1 - ctc_weight)))
+                    logger.info('log prob (hyp, ilm): %.7f' %
+                                (end_hyps[k]['score_ilm'] * (1 - ctc_weight) * ilm_weight))
                     logger.info('log prob (hyp, cp): %.7f' %
                                 (end_hyps[k]['score_cp'] * cp_weight))
                     if ctc_prefix_scorer is not None:
                         logger.info('log prob (hyp, ctc): %.7f' %
                                     (end_hyps[k]['score_ctc'] * ctc_weight))
-                    if lm is not None:
+                    if lm is not None or self.lm is not None:
                         logger.info('log prob (hyp, first-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm'] * lm_weight))
                     if lm_second is not None:
@@ -1428,7 +1457,7 @@ class RNNDecoder(DecoderBase):
 
         return nbest_hyps_idx, aws, scores
 
-    def batchfy_beam(self, hyps, i):
+    def batchfy_beam(self, hyps, i, ilm_weight):
         """Batchfy all the active hypetheses in an utternace for efficient matrix multiplication."""
         y = torch.zeros((len(hyps), 1), dtype=torch.int64, device=self.device)
         for j, beam in enumerate(hyps):
@@ -1441,7 +1470,13 @@ class RNNDecoder(DecoderBase):
         hxs = torch.cat([beam['dstates']['dstate'][0] for beam in hyps], dim=1)
         cxs = torch.cat([beam['dstates']['dstate'][1] for beam in hyps], dim=1)
         dstates = {'dstate': (hxs, cxs)}
-        return y, cv, aw, dstates
+        if ilm_weight > 0:
+            ilm_hxs = torch.cat([beam['ilm_dstates']['dstate'][0] for beam in hyps], dim=1)
+            ilm_cxs = torch.cat([beam['ilm_dstates']['dstate'][1] for beam in hyps], dim=1)
+            ilm_dstates = {'dstate': (ilm_hxs, ilm_cxs)}
+        else:
+            ilm_dstates = None
+        return y, cv, aw, dstates, ilm_dstates
 
     def beam_search_block_sync(self, eouts, params, helper, idx2token,
                                hyps, hyps_nobd, lm, ctc_log_probs=None, speaker=None,
@@ -1455,6 +1490,7 @@ class RNNDecoder(DecoderBase):
         lp_weight = params.get('recog_length_penalty')
         length_norm = params.get('recog_length_norm')
         lm_weight = params.get('recog_lm_weight')
+        ilm_weight = params.get('recog_ilm_weight')
         eos_threshold = params.get('recog_eos_threshold')
         lm_state_CO = params.get('recog_lm_state_carry_over')
         softmax_smoothing = params.get('recog_softmax_smoothing')
@@ -1467,6 +1503,7 @@ class RNNDecoder(DecoderBase):
             dstates = self.zero_state(1)
             lmstate = None
             ctc_state = None
+            ilm_dstates = self.zero_state(1) if ilm_weight > 0 else None
 
             if speaker is not None:
                 if lm_state_CO and speaker == self.prev_spk:
@@ -1489,7 +1526,8 @@ class RNNDecoder(DecoderBase):
 
             self.n_frames = 0
             self.key_tail = None
-            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state)
+            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state,
+                                        ilm_dstates=ilm_dstates)
         else:
             hyps += hyps_nobd
             hyps_nobd = []
@@ -1505,7 +1543,7 @@ class RNNDecoder(DecoderBase):
                 break
 
             # batchfy all hypotheses for batch decoding
-            y, cv, aw, dstates = self.batchfy_beam(hyps, i)
+            y, cv, aw, dstates, ilm_dstates = self.batchfy_beam(hyps, i, ilm_weight)
 
             # Update LM states for LM fusion
             lmout, lmstate, scores_lm = helper.update_rnnlm_state_batch(
@@ -1515,6 +1553,11 @@ class RNNDecoder(DecoderBase):
             dstates, cv, aw, _, attn_v = self.decode_step(
                 eouts, dstates, cv, y_emb, None, aw, lmout, streaming=True)
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)
+            if ilm_weight > 0:
+                ilm_dstates, _, _, _, ilm_attn_v = self.decode_step(
+                    eouts.new_zeros(eouts.size()), ilm_dstates, cv.new_zeros(cv.size()),
+                    y_emb, None, None, lmout, streaming=True, internal_lm=True)
+                scores_ilm = torch.log_softmax(self.output(ilm_attn_v).squeeze(1) * softmax_smoothing, dim=1)
 
             new_hyps = []
             for j, beam in enumerate(hyps):
@@ -1526,12 +1569,17 @@ class RNNDecoder(DecoderBase):
 
                 # Attention scores
                 total_scores_att = beam['score_att'] + scores_att[j:j + 1]
+                if ilm_weight > 0:
+                    total_scores_ilm = beam['score_ilm'] + scores_ilm[j:j + 1]
+                else:
+                    total_scores_ilm = eouts.new_zeros(1, self.vocab)
                 total_scores = total_scores_att * (1 - ctc_weight)
+                total_scores -= total_scores_ilm * ilm_weight * (1 - ctc_weight)
 
                 # Add LM score <after> top-K selection
                 total_scores_topk, topk_ids = torch.topk(
                     total_scores, k=beam_width, dim=1, largest=True, sorted=True)
-                if lm is not None:
+                if lm is not None or self.lm is not None:
                     total_scores_lm = beam['score_lm'] + scores_lm[j, -1, topk_ids[0]]
                     total_scores_topk += total_scores_lm * lm_weight
                 else:
@@ -1572,10 +1620,13 @@ class RNNDecoder(DecoderBase):
                         {'hyp': beam['hyp'] + [idx],
                          'score': total_score,
                          'score_att': total_scores_att[0, idx].item(),
+                         'score_ilm': total_scores_ilm[0, idx].item(),
                          'score_ctc': total_scores_ctc[k].item(),
                          'score_lm': total_scores_lm[k].item(),
                          'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1],
                                                 dstates['dstate'][1][:, j:j + 1])},
+                         'ilm_dstates': {'dstate': (ilm_dstates['dstate'][0][:, j:j + 1],
+                                                    ilm_dstates['dstate'][1][:, j:j + 1])} if ilm_weight > 0 else None,
                          'cv': cv[j:j + 1],
                          'aws': beam['aws'] + [aw[j:j + 1]],
                          'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1],
@@ -1619,16 +1670,19 @@ class RNNDecoder(DecoderBase):
                             merged_hyps[k]['score'])
                 logger.info('log prob (hyp, att): %.7f' %
                             (merged_hyps[k]['score_att'] * (1 - ctc_weight)))
+                logger.info('log prob (hyp, ilm): %.7f' %
+                            (merged_hyps[k]['score_ilm'] * (1 - ctc_weight) * ilm_weight))
                 if self.ctc_prefix_scorer is not None:
                     logger.info('log prob (hyp, ctc): %.7f' %
                                 (merged_hyps[k]['score_ctc'] * ctc_weight))
-                if lm is not None:
+                if lm is not None or self.lm is not None:
                     logger.info('log prob (hyp, first-pass lm): %.7f' %
                                 (merged_hyps[k]['score_lm'] * lm_weight))
                 logger.info('-' * 50)
 
         # Store ASR/LM state
         if len(merged_hyps) > 0:
+            self.asrstate_final = merged_hyps[0]
             self.lmstate_final = merged_hyps[0]['lmstate']
 
         self.n_frames += eouts.size(1)

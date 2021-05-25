@@ -32,6 +32,7 @@ lm=
 lm_second=
 lm_bwd=
 lm_weight=0.5
+ilm_weight=0
 lm_second_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 softmax_smoothing=1.0
@@ -82,6 +83,9 @@ for set in ${eval_set}; do
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ]; then
         recog_dir=${recog_dir}_lm${lm_weight}
+    fi
+    if [ ${ilm_weight} != 0 ]; then
+        recog_dir=${recog_dir}_ilm${ilm_weight}
     fi
     if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
         recog_dir=${recog_dir}_rescore${lm_second_weight}
@@ -180,6 +184,7 @@ for set in ${eval_set}; do
         --recog_lm_second ${lm_second} \
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
+        --recog_ilm_weight ${ilm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_softmax_smoothing ${softmax_smoothing} \
