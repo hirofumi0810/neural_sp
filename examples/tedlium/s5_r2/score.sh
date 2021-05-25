@@ -159,11 +159,9 @@ for set in ${eval_set}; do
     fi
     mkdir -p ${recog_dir}
 
-    recog_set=${data}/dataset/${set}_wpbpe10000.tsv
-
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
         --recog_n_gpus ${n_gpus} \
-        --recog_sets ${recog_set} \
+        --recog_sets ${data}/dataset/${set}_wpbpe10000.tsv \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
