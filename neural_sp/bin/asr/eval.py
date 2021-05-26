@@ -61,8 +61,11 @@ def main():
         if i == 0:
             # Load ASR model
             model = Speech2Text(args, dir_name)
-            epoch = int(float(args.recog_model[0].split('-')[-1]) * 10) / 10
-            if args.recog_n_average > 1:
+            if 'model-avg' in args.recog_model[0]:
+                epoch = -1
+            else:
+                epoch = int(float(args.recog_model[0].split('-')[-1]) * 10) / 10
+            if args.recog_n_average > 1 and epoch > 0:
                 # Model averaging for Transformer
                 average_checkpoints(model, args.recog_model[0],
                                     n_average=args.recog_n_average)
