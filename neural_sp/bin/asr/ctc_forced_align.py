@@ -15,10 +15,7 @@ from tqdm import tqdm
 
 from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
-from neural_sp.bin.train_utils import (
-    load_checkpoint,
-    set_logger
-)
+from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.asr.build import build_dataloader
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
@@ -36,7 +33,22 @@ def main():
         os.remove(os.path.join(args.recog_dir, 'align.log'))
     set_logger(os.path.join(args.recog_dir, 'align.log'), stdout=args.recog_stdout)
 
-    for i, s in enumerate(args.recog_sets):
+    # Load ASR model
+    model = Speech2Text(args, dir_name)
+    average_checkpoints(model, args.recog_model[0], n_average=args.recog_n_average)
+
+    if not args.recog_unit:
+        args.recog_unit = args.unit
+
+    logger.info('recog unit: %s' % args.recog_unit)
+    logger.info('batch size: %d' % args.recog_batch_size)
+
+    # GPU setting
+    if args.recog_n_gpus >= 1:
+        model.cudnn_setting(deterministic=True, benchmark=False)
+        model.cuda()
+
+    for s in args.recog_sets:
         # Align all utterances
         args.min_n_frames = 0
         args.max_n_frames = 1e5
@@ -45,32 +57,6 @@ def main():
         dataloader = build_dataloader(args=args,
                                       tsv_path=s,
                                       batch_size=args.recog_batch_size)
-
-        if i == 0:
-            # Load ASR model
-            model = Speech2Text(args, dir_name)
-            if 'model-avg' in args.recog_model[0]:
-                epoch = -1
-            else:
-                epoch = int(float(args.recog_model[0].split('-')[-1]) * 10) / 10
-            if args.recog_n_average > 1 and epoch > 0:
-                # Model averaging for Transformer
-                average_checkpoints(model, args.recog_model[0],
-                                    n_average=args.recog_n_average)
-            else:
-                load_checkpoint(args.recog_model[0], model)
-
-            if not args.recog_unit:
-                args.recog_unit = args.unit
-
-            logger.info('recog unit: %s' % args.recog_unit)
-            logger.info('epoch: %d' % epoch)
-            logger.info('batch size: %d' % args.recog_batch_size)
-
-            # GPU setting
-            if args.recog_n_gpus >= 1:
-                model.cudnn_setting(deterministic=True, benchmark=False)
-                model.cuda()
 
         save_path = mkdir_join(args.recog_dir, 'ctc_forced_alignments')
 
@@ -89,8 +75,8 @@ def main():
 
                 tokens = dataloader.idx2token[0](batch['ys'][b], return_list=True)
                 with codecs.open(save_path_utt, 'w', encoding="utf-8") as f:
-                    for i, tok in enumerate(tokens):
-                        f.write('%s %d\n' % (tok, trigger_points[b, i]))
+                    for i_tok, tok in enumerate(tokens):
+                        f.write('%s %d\n' % (tok, trigger_points[b, i_tok]))
                     f.write('%s %d\n' % ('<eos>', trigger_points[b, len(tokens)]))
 
             pbar.update(len(batch['xs']))

@@ -19,7 +19,6 @@ from neural_sp.bin.eval_utils import (
 )
 from neural_sp.bin.plot_utils import plot_attention_weights
 from neural_sp.bin.train_utils import (
-    load_checkpoint,
     load_config,
     set_logger
 )
@@ -40,6 +39,60 @@ def main():
         os.remove(os.path.join(args.recog_dir, 'plot.log'))
     set_logger(os.path.join(args.recog_dir, 'plot.log'), stdout=args.recog_stdout)
 
+    # Load ASR model
+    model = Speech2Text(args, dir_name)
+    average_checkpoints(model, args.recog_model[0], n_average=args.recog_n_average)
+
+    # Ensemble (different models)
+    ensemble_models = [model]
+    if len(args.recog_model) > 1:
+        for recog_model_e in args.recog_model[1:]:
+            conf_e = load_config(os.path.join(os.path.dirname(recog_model_e), 'conf.yml'))
+            args_e = copy.deepcopy(args)
+            for k, v in conf_e.items():
+                if 'recog' not in k:
+                    setattr(args_e, k, v)
+            model_e = Speech2Text(args_e)
+            average_checkpoints(model_e, recog_model_e, n_average=args.recog_n_average)
+            ensemble_models += [model_e]
+
+    # Load LM for shallow fusion
+    if not args.lm_fusion:
+        if args.recog_lm is not None and args.recog_lm_weight > 0:
+            lm = load_lm(args.recog_lm, args.recog_mem_len)
+            if lm.backward:
+                model.lm_bwd = lm
+            else:
+                model.lm_fwd = lm
+        # NOTE: only support for first pass
+
+    if not args.recog_unit:
+        args.recog_unit = args.unit
+
+    logger.info('recog unit: %s' % args.recog_unit)
+    logger.info('recog oracle: %s' % args.recog_oracle)
+    logger.info('batch size: %d' % args.recog_batch_size)
+    logger.info('beam width: %d' % args.recog_beam_width)
+    logger.info('min length ratio: %.3f' % args.recog_min_len_ratio)
+    logger.info('max length ratio: %.3f' % args.recog_max_len_ratio)
+    logger.info('length penalty: %.3f' % args.recog_length_penalty)
+    logger.info('length norm: %s' % args.recog_length_norm)
+    logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
+    logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
+    logger.info('CTC weight: %.3f' % args.recog_ctc_weight)
+    logger.info('fist LM path: %s' % args.recog_lm)
+    logger.info('LM weight: %.3f' % args.recog_lm_weight)
+    logger.info('ensemble: %d' % (len(ensemble_models)))
+    logger.info('ASR decoder state carry over: %s' % (args.recog_asr_state_carry_over))
+    logger.info('LM state carry over: %s' % (args.recog_lm_state_carry_over))
+    logger.info('model average (Transformer): %d' % (args.recog_n_average))
+
+    # GPU setting
+    if args.recog_n_gpus >= 1:
+        model.cudnn_setting(deterministic=True, benchmark=False)
+        for m in ensemble_models:
+            m.cuda()
+
     for i, s in enumerate(args.recog_sets):
         # Load dataloader
         dataloader = build_dataloader(args=args,
@@ -48,75 +101,6 @@ def main():
                                       is_test=True,
                                       first_n_utterances=args.recog_first_n_utt,
                                       longform_max_n_frames=args.recog_longform_max_n_frames)
-
-        if i == 0:
-            # Load ASR model
-            model = Speech2Text(args, dir_name)
-            if 'model-avg' in args.recog_model[0]:
-                epoch = -1
-            else:
-                epoch = int(float(args.recog_model[0].split('-')[-1]) * 10) / 10
-            if args.recog_n_average > 1 and epoch > 0:
-                # Model averaging for Transformer
-                average_checkpoints(model, args.recog_model[0],
-                                    n_average=args.recog_n_average)
-            else:
-                load_checkpoint(args.recog_model[0], model)
-
-            # Ensemble (different models)
-            ensemble_models = [model]
-            if len(args.recog_model) > 1:
-                for recog_model_e in args.recog_model[1:]:
-                    conf_e = load_config(os.path.join(os.path.dirname(recog_model_e), 'conf.yml'))
-                    args_e = copy.deepcopy(args)
-                    for k, v in conf_e.items():
-                        if 'recog' not in k:
-                            setattr(args_e, k, v)
-                    model_e = Speech2Text(args_e)
-                    load_checkpoint(recog_model_e, model_e)
-                    if args.recog_n_gpus >= 1:
-                        model_e.cuda()
-                    ensemble_models += [model_e]
-
-            # Load LM for shallow fusion
-            if not args.lm_fusion:
-                if args.recog_lm is not None and args.recog_lm_weight > 0:
-                    lm = load_lm(args.recog_lm, args.recog_mem_len)
-                    if lm.backward:
-                        model.lm_bwd = lm
-                    else:
-                        model.lm_fwd = lm
-                # NOTE: only support for first pass
-
-            if not args.recog_unit:
-                args.recog_unit = args.unit
-
-            logger.info('recog unit: %s' % args.recog_unit)
-            logger.info('recog oracle: %s' % args.recog_oracle)
-            logger.info('epoch: %d' % epoch)
-            logger.info('batch size: %d' % args.recog_batch_size)
-            logger.info('beam width: %d' % args.recog_beam_width)
-            logger.info('min length ratio: %.3f' % args.recog_min_len_ratio)
-            logger.info('max length ratio: %.3f' % args.recog_max_len_ratio)
-            logger.info('length penalty: %.3f' % args.recog_length_penalty)
-            logger.info('length norm: %s' % args.recog_length_norm)
-            logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
-            logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
-            logger.info('CTC weight: %.3f' % args.recog_ctc_weight)
-            logger.info('fist LM path: %s' % args.recog_lm)
-            logger.info('LM weight: %.3f' % args.recog_lm_weight)
-            logger.info('GNMT: %s' % args.recog_gnmt_decoding)
-            logger.info('forward-backward attention: %s' % args.recog_fwd_bwd_attention)
-            logger.info('resolving UNK: %s' % args.recog_resolving_unk)
-            logger.info('ensemble: %d' % (len(ensemble_models)))
-            logger.info('ASR decoder state carry over: %s' % (args.recog_asr_state_carry_over))
-            logger.info('LM state carry over: %s' % (args.recog_lm_state_carry_over))
-            logger.info('model average (Transformer): %d' % (args.recog_n_average))
-
-            # GPU setting
-            if args.recog_n_gpus >= 1:
-                model.cudnn_setting(deterministic=True, benchmark=False)
-                model.cuda()
 
         save_path = mkdir_join(args.recog_dir, 'att_weights')
 

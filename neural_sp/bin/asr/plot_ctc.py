@@ -14,10 +14,7 @@ import sys
 from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_ctc_probs
-from neural_sp.bin.train_utils import (
-    load_checkpoint,
-    set_logger
-)
+from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.asr.build import build_dataloader
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
@@ -35,6 +32,21 @@ def main():
         os.remove(os.path.join(args.recog_dir, 'plot.log'))
     set_logger(os.path.join(args.recog_dir, 'plot.log'), stdout=args.recog_stdout)
 
+    # Load ASR model
+    model = Speech2Text(args, dir_name)
+    average_checkpoints(model, args.recog_model[0], n_average=args.recog_n_average)
+
+    if not args.recog_unit:
+        args.recog_unit = args.unit
+
+    logger.info('recog unit: %s' % args.recog_unit)
+    logger.info('batch size: %d' % args.recog_batch_size)
+
+    # GPU setting
+    if args.recog_n_gpus >= 1:
+        model.cudnn_setting(deterministic=True, benchmark=False)
+        model.cuda()
+
     for i, s in enumerate(args.recog_sets):
         # Load dataloader
         dataloader = build_dataloader(args=args,
@@ -43,32 +55,6 @@ def main():
                                       is_test=True,
                                       first_n_utterances=args.recog_first_n_utt,
                                       longform_max_n_frames=args.recog_longform_max_n_frames)
-
-        if i == 0:
-            # Load ASR model
-            model = Speech2Text(args, dir_name)
-            if 'model-avg' in args.recog_model[0]:
-                epoch = -1
-            else:
-                epoch = int(float(args.recog_model[0].split('-')[-1]) * 10) / 10
-            if args.recog_n_average > 1 and epoch > 0:
-                # Model averaging for Transformer
-                average_checkpoints(model, args.recog_model[0],
-                                    n_average=args.recog_n_average)
-            else:
-                load_checkpoint(args.recog_model[0], model)
-
-            if not args.recog_unit:
-                args.recog_unit = args.unit
-
-            logger.info('recog unit: %s' % args.recog_unit)
-            logger.info('epoch: %d' % epoch)
-            logger.info('batch size: %d' % args.recog_batch_size)
-
-            # GPU setting
-            if args.recog_n_gpus >= 1:
-                model.cudnn_setting(deterministic=True, benchmark=False)
-                model.cuda()
 
         save_path = mkdir_join(args.recog_dir, 'ctc_probs')
 
