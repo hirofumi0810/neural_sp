@@ -14,7 +14,7 @@ from neural_sp.utils import mkdir_join
 logger = logging.getLogger(__name__)
 
 
-def eval_char(models, dataloader, params, epoch, rank=0,
+def eval_char(models, dataloader, params, epoch=-1, rank=0,
               save_dir=None, streaming=False, progressbar=False, task_idx=0,
               edit_distance=True, fine_grained=False, oracle=False,
               teacher_force=False):
