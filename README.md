@@ -13,11 +13,12 @@ make KALDI=/path/to/kaldi TOOL=/path/to/save/tools
 ### Corpus
   - ASR
     - AISHELL-1
+    - AISHELL-2
     - AMI
     - CSJ
     - LaboroTVSpeech
     - Librispeech
-    - Switchboard (+ Fisher)
+    - Switchboard (+Fisher)
     - TEDLIUM2/TEDLIUM3
     - TIMIT
     - WSJ
@@ -61,6 +62,7 @@ make KALDI=/path/to/kaldi TOOL=/path/to/save/tools
     - Deep fusion [[link](https://arxiv.org/abs/1503.03535)]
     - Forward-backward attention decoding [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1160.html)]
     - Ensemble decoding
+    - internal LM estimation [[link](https://arxiv.org/abs/2011.01991)]
   - Attention type
     - location-based
     - content-based
@@ -107,6 +109,11 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | Conformer LAS | 4.1 | 4.5  |
 | Transformer   | 5.0 | 5.4  |
 | Streaming MMA | 5.5 | 6.1  |
+
+### AISHELL-2 (CER)
+| Model         | test_android | test_ios | test_mic |
+| -----------   | ------------ | -------- | -------- |
+| Conformer LAS | 6.1          | 5.5      | 5.9      |
 
 ### CSJ (WER)
 | Model          | eval1 | eval2 | eval3 |
