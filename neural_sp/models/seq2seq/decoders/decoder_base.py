@@ -29,10 +29,25 @@ class DecoderBase(ModelBase):
         self._new_session = True
 
     def trigger_scheduled_sampling(self):
+        logger.info('Activate scheduled sampling')
         self._ss_prob = getattr(self, 'ss_prob', 0)
 
     def trigger_quantity_loss(self):
-        self._quantity_loss_weight = getattr(self, 'quantity_loss_weight', 0)
+        if getattr(self, 'attn_type', '') == 'mocha':
+            logger.info('Activate quantity loss')
+            self._quantity_loss_weight = getattr(self, 'quantity_loss_weight', 0)
+
+    def trigger_latency_loss(self):
+        if getattr(self, 'attn_type', '') == 'mocha':
+            logger.info('Activate latency loss')
+            self._latency_loss_weight = getattr(self, 'latency_loss_weight', 0)
+
+    def trigger_stableemit(self):
+        if getattr(self, 'attn_type', '') == 'mocha':
+            if hasattr(self, 'score'):
+                self.score.trigger_stableemit()
+            elif hasattr(self, 'layers'):
+                pass  # TODO(hirofumi): MMA
 
     def greedy(self, eouts, elens, max_len_ratio):
         raise NotImplementedError
