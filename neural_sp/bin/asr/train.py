@@ -316,6 +316,8 @@ def main(args):
         model.module.trigger_scheduled_sampling()
     if args.get('mocha_quantity_loss_start_epoch', 0) <= resume_epoch:
         model.module.trigger_quantity_loss()
+    if args.get('mocha_stableemit_start_epoch', 0) <= resume_epoch:
+        model.module.trigger_stableemit()
 
     start_time_train = time.time()
     for ep in range(resume_epoch, args.n_epochs):
@@ -370,6 +372,8 @@ def main(args):
             model.module.trigger_scheduled_sampling()
         if args.get('mocha_quantity_loss_start_epoch', 0) == (ep + 1):
             model.module.trigger_quantity_loss()
+        if args.get('mocha_stableemit_start_epoch', 0) == (ep + 1):
+            model.module.trigger_stableemit()
 
     logger.info('Total time: %.2f hour' % ((time.time() - start_time_train) / 3600))
     reporter.close()
@@ -522,7 +526,7 @@ def validate(models, dataloader, args, epoch, logger):
             wer, cer = eval_char(models, dataloader, args, epoch, args.local_rank)
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, wer))
             logger.info('CER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, cer))
-            if dataloader.corpus in ['aishell1']:
+            if dataloader.corpus in ['aishell1', 'aishell2']:
                 metric = cer
             else:
                 metric = wer

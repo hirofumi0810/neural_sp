@@ -33,8 +33,26 @@ def main():
         os.remove(os.path.join(args.recog_dir, 'decode.log'))
     set_logger(os.path.join(args.recog_dir, 'decode.log'), stdout=args.recog_stdout)
 
+    # Load the LM
+    model = build_lm(args)
+    load_checkpoint(args.recog_model[0], model)
+    # NOTE: model averaging is not helpful for LM
+
+    logger.info('batch size: %d' % args.recog_batch_size)
+    logger.info('BPTT: %d' % (args.bptt))
+    logger.info('cache size: %d' % (args.recog_n_caches))
+    logger.info('cache theta: %.3f' % (args.recog_cache_theta))
+    logger.info('cache lambda: %.3f' % (args.recog_cache_lambda))
+
+    model.cache_theta = args.recog_cache_theta
+    model.cache_lambda = args.recog_cache_lambda
+
+    # GPU setting
+    if args.recog_n_gpus > 0:
+        model.cuda()
+
     ppl_avg = 0
-    for i, s in enumerate(args.recog_sets):
+    for s in args.recog_sets:
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
                           tsv_path=s,
@@ -43,27 +61,6 @@ def main():
                           backward=args.backward,
                           serialize=args.serialize,
                           is_test=True)
-
-        if i == 0:
-            # Load the LM
-            model = build_lm(args)
-            load_checkpoint(args.recog_model[0], model)
-            epoch = int(args.recog_model[0].split('-')[-1])
-            # NOTE: model averaging is not helpful for LM
-
-            logger.info('epoch: %d' % epoch)
-            logger.info('batch size: %d' % args.recog_batch_size)
-            logger.info('BPTT: %d' % (args.bptt))
-            logger.info('cache size: %d' % (args.recog_n_caches))
-            logger.info('cache theta: %.3f' % (args.recog_cache_theta))
-            logger.info('cache lambda: %.3f' % (args.recog_cache_lambda))
-            logger.info('model average (Transformer): %d' % (args.recog_n_average))
-            model.cache_theta = args.recog_cache_theta
-            model.cache_lambda = args.recog_cache_lambda
-
-            # GPU setting
-            if args.recog_n_gpus > 0:
-                model.cuda()
 
         start_time = time.time()
 

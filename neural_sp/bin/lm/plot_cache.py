@@ -13,7 +13,6 @@ import shutil
 import sys
 
 from neural_sp.bin.args_lm import parse_args_eval
-from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_cache_weights
 from neural_sp.bin.train_utils import (
     load_checkpoint,
@@ -36,7 +35,25 @@ def main():
         os.remove(os.path.join(args.recog_dir, 'plot.log'))
     set_logger(os.path.join(args.recog_dir, 'plot.log'), stdout=args.recog_stdout)
 
-    for i, s in enumerate(args.recog_sets):
+    # Load the LM
+    model = build_lm(args, dir_name)
+    load_checkpoint(args.recog_model[0], model)
+    # NOTE: model averaging is not helpful for LM
+
+    logger.info('batch size: %d' % args.recog_batch_size)
+    logger.info('BPTT: %d' % (args.bptt))
+    logger.info('cache size: %d' % (args.recog_n_caches))
+    logger.info('cache theta: %.3f' % (args.recog_cache_theta))
+    logger.info('cache lambda: %.3f' % (args.recog_cache_lambda))
+
+    model.cache_theta = args.recog_cache_theta
+    model.cache_lambda = args.recog_cache_lambda
+
+    # GPU setting
+    if args.recog_n_gpus > 0:
+        model.cuda()
+
+    for s in args.recog_sets:
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
                           tsv_path=s,
@@ -45,32 +62,6 @@ def main():
                           backward=args.backward,
                           serialize=args.serialize,
                           is_test=True)
-
-        if i == 0:
-            # Load the LM
-            model = build_lm(args, dir_name)
-            topk_list = load_checkpoint(args.recog_model[0], model)
-            epoch = int(args.recog_model[0].split('-')[-1])
-
-            # Model averaging for Transformer
-            if args.lm_type == 'transformer':
-                model = average_checkpoints(model, args.recog_model[0],
-                                            n_average=args.recog_n_average,
-                                            topk_list=topk_list)
-
-            logger.info('epoch: %d' % (epoch - 1))
-            logger.info('batch size: %d' % args.recog_batch_size)
-            # logger.info('recog unit: %s' % args.recog_unit)
-            # logger.info('ensemble: %d' % (len(ensemble_models)))
-            logger.info('BPTT: %d' % (args.bptt))
-            logger.info('cache size: %d' % (args.recog_n_caches))
-            logger.info('cache theta: %.3f' % (args.recog_cache_theta))
-            logger.info('cache lambda: %.3f' % (args.recog_cache_lambda))
-            model.cache_theta = args.recog_cache_theta
-            model.cache_lambda = args.recog_cache_lambda
-
-            # GPU setting
-            model.cuda()
 
         assert args.recog_n_caches > 0
         save_path = mkdir_join(args.recog_dir, 'cache')

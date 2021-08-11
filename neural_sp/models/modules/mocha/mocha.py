@@ -61,8 +61,9 @@ class MoChA(nn.Module):
         bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method
         decot (bool): delay constrainted training (DeCoT)
-        lookahead (int): lookahead frames for DeCoT
+        decot_delta (int): tolerance frames for DeCoT
         share_chunkwise_attention (int): share CA heads among MA heads
+        stableemit_weight (float): StableEmit weight for selection probability
 
     """
 
@@ -71,7 +72,8 @@ class MoChA(nn.Module):
                  conv1d=False, init_r=-4, eps=1e-6, noise_std=1.0,
                  no_denominator=False, sharpening_factor=1.0,
                  dropout=0., dropout_head=0., bias=True, param_init='',
-                 decot=False, lookahead=2, share_chunkwise_attention=False):
+                 decot=False, decot_delta=2, share_chunkwise_attention=False,
+                 stableemit_weight=0.0):
 
         super().__init__()
 
@@ -90,8 +92,13 @@ class MoChA(nn.Module):
         self.no_denom = no_denominator
         self.sharpening_factor = sharpening_factor
         self.decot = decot
-        self.lookahead = lookahead
+        self.decot_delta = decot_delta
         self.share_ca = share_chunkwise_attention
+        self.stableemit_weight = stableemit_weight
+        assert stableemit_weight >= 0
+        self._stableemit_weight = 0  # for curriculum
+        self.p_threshold = 0.5
+        logger.info('stableemit_weight: %.3f' % stableemit_weight)
 
         if n_heads_mono >= 1:
             self.monotonic_energy = MonotonicEnergy(
@@ -100,7 +107,7 @@ class MoChA(nn.Module):
                 bias, param_init, conv1d=conv1d)
         else:
             self.monotonic_energy = None
-            logger.info('Only chunkwise attention is enabled.')
+            logger.info('monotonic attention is disabled.')
 
         if chunk_size > 1 or self.milk:
             self.chunk_energy = ChunkEnergy(
@@ -147,6 +154,13 @@ class MoChA(nn.Module):
     def register_tail(self, key_tail):
         self.key_tail = key_tail
 
+    def trigger_stableemit(self):
+        logger.info('Activate StableEmit')
+        self._stableemit_weight = self.stableemit_weight
+
+    def set_p_choose_threshold(self, p):
+        self.p_threshold = p
+
     def forward(self, key, value, query, mask, aw_prev=None,
                 cache=False, mode='hard', trigger_points=None, eps_wait=-1,
                 linear_decoding=False, streaming=False):
@@ -191,7 +205,9 @@ class MoChA(nn.Module):
         if mode == 'parallel':  # training
             alpha, p_choose = parallel_monotonic_attention(
                 e_ma, aw_prev, trigger_points, self.eps, self.noise_std, self.no_denom,
-                self.decot, self.lookahead)
+                self.decot, self.decot_delta, self._stableemit_weight)
+            # NOTE: do not mask alpha for numerial issue
+
             # mask out each head independently (HeadDrop)
             if self.dropout_head > 0 and self.training:
                 alpha_masked = headdrop(alpha.clone(), self.H_ma, self.dropout_head)
@@ -199,7 +215,7 @@ class MoChA(nn.Module):
                 alpha_masked = alpha.clone()
         elif mode == 'hard':  # inference
             aw_prev = aw_prev[:, :, :, -e_ma.size(3):]
-            alpha, p_choose = hard_monotonic_attention(e_ma, aw_prev, eps_wait)
+            alpha, p_choose = hard_monotonic_attention(e_ma, aw_prev, eps_wait, self.p_threshold)
             alpha_masked = alpha.clone()
         else:
             raise ValueError("mode must be 'parallel' or 'hard'.")
@@ -227,7 +243,7 @@ class MoChA(nn.Module):
                         bd_R += tail_len
                     bd_L_ca = max(0, bd_L + 1 - self.w) if not self.milk else 0
 
-                    e_ca = self.chunk_energy(key, query, mask, cache, bd_L_ca, bd_R)  # `[B, (H_ma*)H_ca, qlen, ken]`
+                    e_ca = self.chunk_energy(key, query, mask, cache, bd_L_ca, bd_R)  # `[B, (H_ma*)H_ca, qlen, klen]`
                     assert e_ca.size(3) == bd_R - bd_L_ca + 1, (e_ca.size(), bd_L_ca, bd_R, key.size())
 
                     if alpha_masked.size(3) < klen:
@@ -251,7 +267,7 @@ class MoChA(nn.Module):
                     assert beta.size() == (bs, self.H_total, qlen, bd_R - bd_L_ca + 1), \
                         (beta.size(), (bs, self.H_total, qlen, bd_L_ca, bd_R))
             else:
-                e_ca = self.chunk_energy(key, query, mask, cache, 0, bd_R)  # `[B, (H_ma*)H_ca, qlen, ken]`
+                e_ca = self.chunk_energy(key, query, mask, cache, 0, bd_R)  # `[B, (H_ma*)H_ca, qlen, klen]`
 
                 beta = soft_chunkwise_attention(alpha_masked, e_ca, mask, self.w,
                                                 self.H_ca, self.sharpening_factor,
@@ -272,7 +288,7 @@ class MoChA(nn.Module):
             cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.H_total * self.d_k)
             cv = self.w_out(cv)  # `[B, qlen, adim]`
         else:
-            cv = torch.bmm(alpha_masked.squeeze(1) if self.w == 1 else beta.squeeze(1), value)  # `[B, 1, adim]`
+            cv = torch.bmm(alpha_masked.squeeze(1) if self.w == 1 else beta.squeeze(1), value)  # `[B, qlen, adim]`
 
         if mode == 'hard' and use_tail:
             bd_L -= tail_len
