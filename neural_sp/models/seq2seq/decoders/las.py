@@ -1114,6 +1114,8 @@ class RNNDecoder(DecoderBase):
         asr_state_CO = params.get('recog_asr_state_carry_over')
         lm_state_CO = params.get('recog_lm_state_carry_over')
         softmax_smoothing = params.get('recog_softmax_smoothing')
+        if self.attn_type == 'mocha':
+            self.score.set_p_choose_threshold(params.get('recog_mocha_p_choose_threshold', 0.5))
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, lm_weight, eouts.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)

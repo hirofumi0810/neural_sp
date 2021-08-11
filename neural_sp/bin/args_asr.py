@@ -413,4 +413,6 @@ def build_parser():
     parser.add_argument('--recog_rnnt_beam_search_type', type=str, default='time_sync_mono',
                         choices=['time_sync_mono', 'time_sync'],
                         help='beam search algorithm for RNN-T')
+    parser.add_argument('--recog_mocha_p_choose_threshold', type=float, default=0.5,
+                        help='threshold for p_choose during at test time')
     return parser
