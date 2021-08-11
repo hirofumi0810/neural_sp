@@ -9,13 +9,14 @@ import torch
 logger = logging.getLogger(__name__)
 
 
-def hard_monotonic_attention(e_ma, aw_prev, eps_wait):
+def hard_monotonic_attention(e_ma, aw_prev, eps_wait, p_threshold=0.5):
     """Monotonic attention in MoChA at test time.
 
     Args:
         e_ma (FloatTensor): `[B, H_ma, qlen, klen]`
         aw_prev (FloatTensor): `[B, H_ma, qlen, klen]`
         eps_wait (int): wait time delay for head-synchronous decoding in MMA
+        p_threshold (float): threshold for p_choose during at test time
     Returns:
         alpha (FloatTensor): `[B, H_ma, qlen, klen]`
         p_choose (FloatTensor): `[B, H_ma, qlen, klen]`
@@ -28,8 +29,8 @@ def hard_monotonic_attention(e_ma, aw_prev, eps_wait):
     aw_prev = aw_prev[:, :, :, -klen:]
     # assert aw_prev.sum() > 0
 
-    p_threshold = 0.5
-    p_choose = (torch.sigmoid(e_ma[:, :, 0:1]) >= p_threshold).float()
+    _p_choose = torch.sigmoid(e_ma[:, :, 0:1])  # for visualization
+    p_choose = (_p_choose >= p_threshold).float()
 
     # Attend when monotonic energy is above threshold (Sigmoid > p_threshold)
     # Remove any probabilities before the index chosen at the last time step
@@ -63,7 +64,7 @@ def hard_monotonic_attention(e_ma, aw_prev, eps_wait):
                     alpha[b, h, -1, :] = 0  # reset
                     alpha[b, h, -1, leftmost + eps_wait] = 1
 
-    return alpha, p_choose
+    return alpha, _p_choose
 
 
 def exclusive_cumprod(x):

@@ -207,20 +207,23 @@ class Speech2Text(ModelBase):
         # main task
         for dir in ['fwd', 'bwd']:
             if hasattr(self, 'dec_' + dir):
-                logger.info('Activate scheduled sampling (main)')
                 getattr(self, 'dec_' + dir).trigger_scheduled_sampling()
 
         # sub task
         for sub in ['sub1', 'sub2']:
             if hasattr(self, 'dec_fwd_' + sub):
-                logger.info('Activate scheduled sampling (%s)' % sub)
                 getattr(self, 'dec_fwd_' + sub).trigger_scheduled_sampling()
 
     def trigger_quantity_loss(self):
         # main task only now
         if hasattr(self, 'dec_fwd'):
-            logger.info('Activate quantity loss')
             getattr(self, 'dec_fwd').trigger_quantity_loss()
+            getattr(self, 'dec_fwd').trigger_latency_loss()
+
+    def trigger_stableemit(self):
+        # main task only now
+        if hasattr(self, 'dec_fwd'):
+            getattr(self, 'dec_fwd').trigger_stableemit()
 
     def reset_session(self):
         # main task
@@ -325,8 +328,7 @@ class Speech2Text(ModelBase):
             # for the forward decoder in the sub tasks
             if (getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0) and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc']:
                 if len(batch['ys_' + sub]) == 0:
-                    continue
-                # NOTE: this is for evaluation at the end of every epoch
+                    continue  # NOTE: for evaluation at the end of every epoch
 
                 loss_sub, obs_fwd_sub = getattr(self, 'dec_fwd_' + sub)(
                     eout_dict['ys_' + sub]['xs'], eout_dict['ys_' + sub]['xlens'],

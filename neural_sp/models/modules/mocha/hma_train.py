@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def parallel_monotonic_attention(e_ma, aw_prev, trigger_points, eps, noise_std,
-                                 no_denom, decot, lookahead):
+                                 no_denom, decot, lookahead, stableemit_weight):
     """Efficient monotonic attention in MoChA at training time.
 
     Args:
@@ -22,6 +22,7 @@ def parallel_monotonic_attention(e_ma, aw_prev, trigger_points, eps, noise_std,
         no_denom (bool): set the denominator to 1 in the alpha recurrence
         decot (bool): delay constrainted training (DeCoT)
         lookahead (int): lookahead frames for DeCoT
+        stableemit_weight (float): StableEmit weight
     Returns:
         alpha (FloatTensor): `[B, H_ma, qlen, klen]`
         p_choose (FloatTensor): `[B, H_ma, qlen, klen]`
@@ -38,6 +39,8 @@ def parallel_monotonic_attention(e_ma, aw_prev, trigger_points, eps, noise_std,
     bs, H_ma, qlen, klen = e_ma.size()
     p_choose = torch.sigmoid(add_gaussian_noise(e_ma, noise_std))  # `[B, H_ma, qlen, klen]`
     alpha = []
+    if stableemit_weight > 0:
+        p_choose = (1 - stableemit_weight) * p_choose
     # safe_cumprod computes cumprod in logspace with numeric checks
     cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=eps)  # `[B, H_ma, qlen, klen]`
     # Compute recurrence relation solution

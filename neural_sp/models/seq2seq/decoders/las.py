@@ -99,6 +99,7 @@ class RNNDecoder(DecoderBase):
         quantity_loss_weight (float): quantity loss weight for MoChA
         latency_metric (str): latency metric for MoChA
         latency_loss_weight (float): latency loss weight for MoChA
+        mocha_stableemit_weight (float): StableEmit weight for MoChA
         gmm_attn_n_mixtures (int): number of mixtures for GMM attention
         replace_sos (bool): replace <sos> with special tokens
         distil_weight (float): soft label weight for knowledge distillation
@@ -120,7 +121,7 @@ class RNNDecoder(DecoderBase):
                  mocha_chunk_size, mocha_n_heads_mono,
                  mocha_init_r, mocha_eps, mocha_std, mocha_no_denominator,
                  mocha_1dconv, mocha_decot_lookahead, quantity_loss_weight,
-                 latency_metric, latency_loss_weight,
+                 latency_metric, latency_loss_weight, mocha_stableemit_weight,
                  gmm_attn_n_mixtures, replace_sos, distillation_weight, discourse_aware):
 
         super(RNNDecoder, self).__init__()
@@ -156,6 +157,7 @@ class RNNDecoder(DecoderBase):
         self._quantity_loss_weight = 0  # for curriculum
         self.latency_metric = latency_metric
         self.latency_loss_weight = latency_loss_weight
+        self._latency_loss_weight = 0  # for curriculum
         if ('ctc_sync' in latency_metric) or attn_type == 'triggered_attention':
             assert 0 < self.ctc_weight < 1
 
@@ -209,7 +211,8 @@ class RNNDecoder(DecoderBase):
                                    conv1d=mocha_1dconv,
                                    sharpening_factor=attn_sharpening_factor,
                                    decot='decot' in latency_metric,
-                                   lookahead=mocha_decot_lookahead)
+                                   decot_delta=mocha_decot_lookahead,
+                                   stableemit_weight=mocha_stableemit_weight)
             elif attn_type == 'gmm':
                 self.score = GMMAttention(enc_n_units, qdim, attn_dim,
                                           n_mixtures=gmm_attn_n_mixtures)
@@ -361,6 +364,10 @@ class RNNDecoder(DecoderBase):
                             help='latency loss weight for MoChA')
         parser.add_argument('--mocha_decot_lookahead', type=int, default=0,
                             help='buffer frames in DeCoT')
+        parser.add_argument('--mocha_stableemit_weight', type=float, default=0.0,
+                            help='StableEmit weight for MoChA')
+        parser.add_argument('--mocha_stableemit_start_epoch', type=int, default=0,
+                            help='epoch to turn on StableEmit')
         return parser
 
     @staticmethod
@@ -395,6 +402,8 @@ class RNNDecoder(DecoderBase):
                 dir_name += str(args.mocha_decot_lookahead)
             else:
                 dir_name += str(args.mocha_latency_loss_weight)
+        if args.mocha_stableemit_weight != 0:
+            dir_name += '_stableemit' + str(args.mocha_stableemit_weight)
         if args.attn_n_heads > 1:
             dir_name += '_head' + str(args.attn_n_heads)
         if args.tie_embedding:
@@ -477,8 +486,8 @@ class RNNDecoder(DecoderBase):
                     loss_att += loss_quantity * self._quantity_loss_weight
                 observation['loss_quantity'] = tensor2scalar(loss_quantity)
             if self.latency_metric:
-                if self.latency_loss_weight > 0:
-                    loss_att += loss_latency * self.latency_loss_weight
+                if self._latency_loss_weight > 0:
+                    loss_att += loss_latency * self._latency_loss_weight
                 observation['loss_latency'] = tensor2scalar(loss_latency) if self.training else 0
             if self.mtl_per_batch:
                 loss += loss_att
@@ -617,8 +626,8 @@ class RNNDecoder(DecoderBase):
             ys (List[List]): length `[B]`, each of which contains a list of size `[L]`
             return_logits (bool): return logits for knowledge distillation
             teacher_logits (FloatTensor): `[B, L, vocab]`
-            ctc_trigger_points (IntTensor): `[B, L]`
-            forced_trigger_points (IntTensor): `[B, L]`
+            ctc_trigger_points (IntTensor): `[B, L]` (used for latency loss)
+            forced_trigger_points (IntTensor): `[B, L]` (used for alignment path restriction)
         Returns:
             loss (FloatTensor): `[1]`
             acc (float): accuracy for token prediction
