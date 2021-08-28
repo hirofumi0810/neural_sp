@@ -296,6 +296,7 @@ class RNNTransducer(DecoderBase):
 
         new_hxs, new_cxs = [], []
         for lth in range(self.n_layers):
+            self.rnn[lth].flatten_parameters()  # for multi-GPUs
             ys_emb, (h, c) = self.rnn[lth](ys_emb, hx=(dstate['hxs'][lth:lth + 1],
                                                        dstate['cxs'][lth:lth + 1]))
             new_hxs.append(h)
@@ -348,10 +349,8 @@ class RNNTransducer(DecoderBase):
             aw: dummy
 
         """
-        bs = eouts.size(0)
-
         hyps = []
-        for b in range(bs):
+        for b in range(eouts.size(0)):
             hyp_b = []
             # Initialization
             y = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(self.eos)
@@ -371,7 +370,7 @@ class RNNTransducer(DecoderBase):
             hyps += [hyp_b]
 
         if idx2token is not None:
-            for b in range(bs):
+            for b in range(eouts.size(0)):
                 if utt_ids is not None:
                     logger.debug('Utt-id: %s' % utt_ids[b])
                 if refs_id is not None and self.vocab == idx2token.vocab:
@@ -417,7 +416,7 @@ class RNNTransducer(DecoderBase):
         return hyps
 
     def beam_search(self, eouts, elens, params, idx2token=None,
-                    lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
+                    lm=None, lm_second=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
                     ensmbl_eouts=[], ensmbl_elens=[], ensmbl_decs=[]):
@@ -430,7 +429,6 @@ class RNNTransducer(DecoderBase):
             idx2token (): converter from index to token
             lm (torch.nn.module): firsh-pass LM
             lm_second (torch.nn.module): second-pass LM
-            lm_second_bwd (torch.nn.module): second-pass backward LM
             ctc_log_probs (FloatTensor): `[B, T, vocab]`
             nbest (int): number of N-best list
             exclude_eos (bool): exclude <eos> from hypothesis
@@ -446,7 +444,7 @@ class RNNTransducer(DecoderBase):
             scores: dummy
 
         """
-        bs = eouts.size(0)
+        bs, xmax = eouts.size()[:2]
 
         beam_width = params.get('recog_beam_width')
         assert 1 <= nbest <= beam_width
@@ -456,7 +454,6 @@ class RNNTransducer(DecoderBase):
         cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
         lm_weight_second = params.get('recog_lm_second_weight')
-        lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
         lm_state_CO = params.get('recog_lm_state_carry_over')
         softmax_smoothing = params.get('recog_softmax_smoothing')
         beam_search_type = params.get('recog_rnnt_beam_search_type')
@@ -466,7 +463,6 @@ class RNNTransducer(DecoderBase):
         if lm is not None:
             assert isinstance(lm, RNNLM)
         lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second, cache_emb)
-        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd, cache_emb)
 
         # cache token embeddings
         if cache_emb:
@@ -506,7 +502,6 @@ class RNNTransducer(DecoderBase):
 
             # forward/backward second-pass LM rescoring
             end_hyps = helper.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
-            end_hyps = helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
             # Normalize by length
             end_hyps = sorted(end_hyps, key=lambda x: x['score'] / max(len(x['hyp'][1:]), 1), reverse=True)
@@ -531,9 +526,6 @@ class RNNTransducer(DecoderBase):
                     if lm_second is not None:
                         logger.info('log prob (hyp, second-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
-                    if lm_second_bwd is not None:
-                        logger.info('log prob (hyp, second-pass lm, reverse): %.7f' %
-                                    (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     logger.info('-' * 50)
 
             # N-best list (exclude <eos>)

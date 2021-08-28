@@ -5,7 +5,6 @@
 
 import copy
 from distutils.util import strtobool
-from distutils.version import LooseVersion
 import logging
 import math
 import numpy as np
@@ -135,7 +134,7 @@ class TransformerDecoder(DecoderBase):
         # for MMA
         self.attn_type = attn_type
         self.quantity_loss_weight = mma_quantity_loss_weight
-        self._quantity_loss_weight = mma_quantity_loss_weight  # for curriculum
+        self._quantity_loss_weight = 0  # for curriculum
         self.mma_first_layer = max(1, mma_first_layer)
         self.headdiv_loss_weight = mma_headdiv_loss_weight
 
@@ -222,29 +221,30 @@ class TransformerDecoder(DecoderBase):
         group.add_argument('--dropout_head', type=float, default=0.0,
                            help='HeadDrop probability for masking out a head in the Transformer decoder')
         # MMA specific
-        parser.add_argument('--mocha_n_heads_mono', type=int, default=1,
-                            help='number of heads for monotonic attention')
-        parser.add_argument('--mocha_n_heads_chunk', type=int, default=1,
-                            help='number of heads for chunkwise attention')
-        parser.add_argument('--mocha_chunk_size', type=int, default=1,
-                            help='chunk size for MMA. -1 means infinite lookback.')
-        parser.add_argument('--mocha_init_r', type=float, default=-4,
-                            help='initialization of bias parameter for monotonic attention')
-        parser.add_argument('--mocha_eps', type=float, default=1e-6,
-                            help='epsilon value to avoid numerical instability for MMA')
-        parser.add_argument('--mocha_std', type=float, default=1.0,
-                            help='standard deviation of Gaussian noise for MMA during training')
-        parser.add_argument('--mocha_no_denominator', type=strtobool, default=False,
-                            help='remove denominator (set to 1) in the alpha recurrence in MMA')
-        parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
-                            help='1dconv for MMA')
-        parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
-                            help='quantity loss weight for MMA')
-        parser.add_argument('--mocha_latency_metric', type=str, default='',
-                            choices=['', 'ctc_sync'],
-                            help='differentiable latency metric for MMA')
-        parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
-                            help='latency loss weight for MMA')
+        if not hasattr(args, 'mocha_n_heads_mono'):
+            parser.add_argument('--mocha_n_heads_mono', type=int, default=1,
+                                help='number of heads for monotonic attention')
+            parser.add_argument('--mocha_n_heads_chunk', type=int, default=1,
+                                help='number of heads for chunkwise attention')
+            parser.add_argument('--mocha_chunk_size', type=int, default=1,
+                                help='chunk size for MMA. -1 means infinite lookback.')
+            parser.add_argument('--mocha_init_r', type=float, default=-4,
+                                help='initialization of bias parameter for monotonic attention')
+            parser.add_argument('--mocha_eps', type=float, default=1e-6,
+                                help='epsilon value to avoid numerical instability for MMA')
+            parser.add_argument('--mocha_std', type=float, default=1.0,
+                                help='standard deviation of Gaussian noise for MMA during training')
+            parser.add_argument('--mocha_no_denominator', type=strtobool, default=False,
+                                help='remove denominator (set to 1) in the alpha recurrence in MMA')
+            parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
+                                help='1dconv for MMA')
+            parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
+                                help='quantity loss weight for MMA')
+            parser.add_argument('--mocha_latency_metric', type=str, default='',
+                                choices=['', 'ctc_sync'],
+                                help='differentiable latency metric for MMA')
+            parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
+                                help='latency loss weight for MMA')
         group.add_argument('--mocha_first_layer', type=int, default=1,
                            help='the initial layer to have a MMA function')
         group.add_argument('--mocha_head_divergence_loss_weight', type=float, default=0.0,
@@ -586,7 +586,7 @@ class TransformerDecoder(DecoderBase):
             self.embed_cache = self.embed_token_id(indices)
 
     def beam_search(self, eouts, elens, params, idx2token=None,
-                    lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
+                    lm=None, lm_second=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
                     ensmbl_eouts=[], ensmbl_elens=[], ensmbl_decs=[], cache_states=True):
@@ -599,7 +599,6 @@ class TransformerDecoder(DecoderBase):
             idx2token (): converter from index to token
             lm (torch.nn.module): firsh-pass LM
             lm_second (torch.nn.module): second-pass LM
-            lm_second_bwd (torch.nn.module): secoding-pass backward LM
             ctc_log_probs (FloatTensor):
             nbest (int): number of N-best list
             exclude_eos (bool): exclude <eos> from hypothesis
@@ -629,7 +628,6 @@ class TransformerDecoder(DecoderBase):
         cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
         lm_weight_second = params.get('recog_lm_second_weight')
-        lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
         eos_threshold = params.get('recog_eos_threshold')
         lm_state_carry_over = params.get('recog_lm_state_carry_over')
         softmax_smoothing = params.get('recog_softmax_smoothing')
@@ -638,7 +636,6 @@ class TransformerDecoder(DecoderBase):
         helper = BeamSearch(beam_width, self.eos, ctc_weight, lm_weight, self.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)
         lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second, cache_emb)
-        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd, cache_emb)
 
         # cache token embeddings
         if cache_emb:
@@ -859,8 +856,6 @@ class TransformerDecoder(DecoderBase):
             # forward/backward second-pass LM rescoring
             end_hyps = helper.lm_rescoring(end_hyps, lm_second, lm_weight_second,
                                            length_norm=length_norm, tag='second')
-            end_hyps = helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd,
-                                           length_norm=length_norm, tag='second_bwd')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
@@ -897,9 +892,6 @@ class TransformerDecoder(DecoderBase):
                     if lm_second is not None:
                         logger.info('log prob (hyp, second-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
-                    if lm_second_bwd is not None:
-                        logger.info('log prob (hyp, second-pass lm, reverse): %.7f' %
-                                    (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     if self.attn_type == 'mocha':
                         logger.info('streamable: %s' % end_hyps[k]['streamable'])
                         logger.info('streaming failed point: %d' %

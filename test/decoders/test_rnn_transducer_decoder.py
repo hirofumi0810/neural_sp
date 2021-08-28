@@ -91,7 +91,6 @@ def make_decode_params(**kwargs):
         recog_ctc_weight=0.0,
         recog_lm_weight=0.0,
         recog_lm_second_weight=0.0,
-        recog_lm_bwd_weight=0.0,
         recog_cache_embedding=True,
         recog_max_len_ratio=1.0,
         recog_lm_state_carry_over=False,
@@ -144,7 +143,6 @@ def make_args_rnnlm(**kwargs):
         ({'recog_beam_width': 4, 'recog_lm_weight': 0.1, 'recog_cache_embedding': False}),
         # rescoring
         ({'recog_beam_width': 4, 'recog_lm_second_weight': 0.1}),
-        ({'recog_beam_width': 4, 'recog_lm_bwd_weight': 0.1}),
     ]
 )
 def test_decoding(params):
@@ -172,11 +170,6 @@ def test_decoding(params):
         args_lm = make_args_rnnlm()
         module = importlib.import_module('neural_sp.models.lm.rnnlm')
         lm_second = module.RNNLM(args_lm).to(device)
-    lm_second_bwd = None
-    if params['recog_lm_bwd_weight'] > 0:
-        args_lm = make_args_rnnlm()
-        module = importlib.import_module('neural_sp.models.lm.rnnlm')
-        lm_second_bwd = module.RNNLM(args_lm).to(device)
 
     ylens = [4, 5, 3, 7]
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
@@ -198,7 +191,7 @@ def test_decoding(params):
             assert aws is None
         else:
             out = dec.beam_search(eouts, elens, params, idx2token,
-                                  lm, lm_second, lm_second_bwd, ctc_log_probs,
+                                  lm, lm_second, ctc_log_probs,
                                   nbest=params['nbest'], exclude_eos=False,
                                   refs_id=None, utt_ids=None, speakers=None,
                                   ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[])

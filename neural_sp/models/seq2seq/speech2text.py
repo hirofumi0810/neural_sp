@@ -89,7 +89,7 @@ class Speech2Text(ModelBase):
 
         # for MBR
         self.mbr_training = args.mbr_training
-        self.recog_params = vars(args)
+        self.recog_params = dict(args)
         self.idx2token = idx2token
 
         # for discourse-aware model
@@ -171,7 +171,7 @@ class Speech2Text(ModelBase):
         for sub in ['sub1', 'sub2']:
             if getattr(self, sub + '_weight') > 0:
                 args_sub = copy.deepcopy(args)
-                if hasattr(args, 'dec_config_' + sub):
+                if getattr(args, 'dec_config_' + sub, None) is not None:
                     for k, v in getattr(args, 'dec_config_' + sub).items():
                         setattr(args_sub, k, v)
                 # NOTE: Other parameters are the same as the main decoder
@@ -555,7 +555,6 @@ class Speech2Text(ModelBase):
         block_size = params.get('recog_block_sync_size')  # before subsampling
         cache_emb = params.get('recog_cache_embedding')
         ctc_weight = params.get('recog_ctc_weight')
-        backoff = True
 
         assert task == 'ys'
         assert self.input_type == 'speech'
@@ -594,19 +593,18 @@ class Speech2Text(ModelBase):
             self.dec_fwd.cache_embedding(self.device)
 
         self.enc.reset_cache()
-        eout_block_tail = None
         x_block_prev, xlen_block_prev = None, None
         while True:
             # Encode input features block by block
             x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feat()
             if not is_transformer_enc and is_reset:
                 self.enc.reset_cache()
-                if backoff:
-                    self.encode([x_block_prev], 'all',
-                                streaming=True,
-                                cnn_lookback=cnn_lookback,
-                                cnn_lookahead=cnn_lookahead,
-                                xlen_block=xlen_block_prev)
+                # backoff (only for RNN encoder)
+                self.encode([x_block_prev], 'all',
+                            streaming=True,
+                            cnn_lookback=cnn_lookback,
+                            cnn_lookahead=cnn_lookahead,
+                            xlen_block=xlen_block_prev)
             x_block_prev = x_block
             xlen_block_prev = xlen_block
             eout_block_dict = self.encode([x_block], 'all',
@@ -615,9 +613,6 @@ class Speech2Text(ModelBase):
                                           cnn_lookahead=cnn_lookahead,
                                           xlen_block=xlen_block)
             eout_block = eout_block_dict[task]['xs']
-            if eout_block_tail is not None:
-                eout_block = torch.cat([eout_block_tail, eout_block], dim=1)
-                eout_block_tail = None
 
             if eout_block.size(1) > 0:
                 streaming.cache_eout(eout_block)
@@ -643,20 +638,21 @@ class Speech2Text(ModelBase):
 
                 # CTC-based reset point detection
                 is_reset = False
-                if streaming.enable_ctc_reset_point_detection:
+                if streaming.ctc_reset_point_detection:
                     if self.ctc_weight_sub1 > 0:
                         ctc_probs_block = self.dec_fwd_sub1.ctc.probs(eout_block_dict['ys_sub1']['xs'])
                         # TODO: consider subsampling
                     else:
                         ctc_probs_block = self.dec_fwd.ctc.probs(eout_block)
-                    is_reset = streaming.ctc_reset_point_detection(ctc_probs_block)
+                    # Condition 1
+                    is_reset = streaming.detect_reset_point(ctc_probs_block)
 
                 merged_hyps = sorted(end_hyps + hyps + hyps_nobd, key=lambda x: x['score'], reverse=True)
                 if len(merged_hyps) > 0:
                     best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
                     best_hyp_id_prefix_viz = np.array(merged_hyps[0]['hyp'][1:])
 
-                    if (len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos):
+                    if len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos:
                         # reset beam if <eos> is generated from the best hypothesis
                         best_hyp_id_prefix = best_hyp_id_prefix[:-1]  # exclude <eos>
                         # Condition 2:
@@ -731,6 +727,8 @@ class Speech2Text(ModelBase):
 
         """
         self.eval()
+        for e in ensemble_models:
+            e.eval()
         if task.split('.')[0] == 'ys':
             dir = 'bwd' if self.bwd_weight > 0 and params['recog_bwd_attention'] else 'fwd'
         elif task.split('.')[0] == 'ys_sub1':
@@ -753,31 +751,30 @@ class Speech2Text(ModelBase):
             eouts = eout_dict[task]['xs']
             elens = eout_dict[task]['xlens']
 
+        dec = getattr(self, 'dec_' + dir)
+
         # CTC
         if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
             lm = getattr(self, 'lm_' + dir, None)
             lm_second = getattr(self, 'lm_second', None)
-            lm_second_bwd = None  # TODO
 
             if params.get('recog_beam_width') == 1:
-                nbest_hyps_id = getattr(self, 'dec_' + dir).ctc.greedy(
+                nbest_hyps_id = dec.ctc.greedy(
                     eouts, elens)
             else:
-                nbest_hyps_id = getattr(self, 'dec_' + dir).ctc.beam_search(
+                nbest_hyps_id = dec.ctc.beam_search(
                     eouts, elens, params, idx2token,
-                    lm, lm_second, lm_second_bwd,
-                    1, refs_id, utt_ids, speakers)
+                    lm, lm_second, 1, refs_id, utt_ids, speakers)
             return nbest_hyps_id, None
 
         # Attention/RNN-T
         elif params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
-            best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
+            best_hyps_id, aws = dec.greedy(
                 eouts, elens, params['recog_max_len_ratio'], idx2token,
                 exclude_eos, refs_id, utt_ids, speakers)
             nbest_hyps_id = [[hyp] for hyp in best_hyps_id]
         else:
             assert params['recog_batch_size'] == 1
-
             scores_ctc = None
             if params['recog_ctc_weight'] > 0:
                 scores_ctc = self.dec_fwd.ctc.scores(eouts)
@@ -790,13 +787,13 @@ class Speech2Text(ModelBase):
                 # forward decoder
                 nbest_hyps_id_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                     eouts, elens, params, idx2token,
-                    lm, None, lm_bwd, scores_ctc,
+                    lm, None, scores_ctc,
                     params['recog_beam_width'], False, refs_id, utt_ids, speakers)
 
                 # backward decoder
                 nbest_hyps_id_bwd, aws_bwd, scores_bwd, _ = self.dec_bwd.beam_search(
                     eouts, elens, params, idx2token,
-                    lm_bwd, None, lm, scores_ctc,
+                    lm_bwd, None, scores_ctc,
                     params['recog_beam_width'], False, refs_id, utt_ids, speakers)
 
                 # forward-backward attention
@@ -820,11 +817,10 @@ class Speech2Text(ModelBase):
 
                 lm = getattr(self, 'lm_' + dir, None)
                 lm_second = getattr(self, 'lm_second', None)
-                lm_bwd = getattr(self, 'lm_bwd' if dir == 'fwd' else 'lm_bwd', None)
 
-                nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
+                nbest_hyps_id, aws, scores = dec.beam_search(
                     eouts, elens, params, idx2token,
-                    lm, lm_second, lm_bwd, scores_ctc,
+                    lm, lm_second, scores_ctc,
                     params['recog_beam_width'], exclude_eos, refs_id, utt_ids, speakers,
                     ensmbl_eouts, ensmbl_elens, ensmbl_decs)
 

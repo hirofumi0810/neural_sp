@@ -227,7 +227,7 @@ class CTC(DecoderBase):
 
         """
         log_probs = torch.log_softmax(self.output(eouts), dim=-1)
-        best_paths = log_probs.argmax(-1)  # `[B, L]`
+        best_paths = log_probs.argmax(-1)  # `[B, T]`
 
         hyps = []
         for b in range(eouts.size(0)):
@@ -254,7 +254,7 @@ class CTC(DecoderBase):
         return hyps
 
     def beam_search(self, eouts, elens, params, idx2token,
-                    lm=None, lm_second=None, lm_second_bwd=None,
+                    lm=None, lm_second=None,
                     nbest=1, refs_id=None, utt_ids=None, speakers=None):
         """Beam search decoding.
 
@@ -265,7 +265,6 @@ class CTC(DecoderBase):
             idx2token (): converter from index to token
             lm (torch.nn.module): firsh-pass LM
             lm_second (torch.nn.module): second-pass LM
-            lm_second_bwd (torch.nn.module): second-pass backward LM
             nbest (int): number of N-best list
             refs_id (List): reference list
             utt_ids (List): utterance id list
@@ -281,7 +280,6 @@ class CTC(DecoderBase):
         cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
         lm_weight_second = params.get('recog_lm_second_weight')
-        lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
         lm_state_CO = params.get('recog_lm_state_carry_over')
         softmax_smoothing = params.get('recog_softmax_smoothing')
 
@@ -290,7 +288,6 @@ class CTC(DecoderBase):
         if lm is not None:
             assert isinstance(lm, RNNLM)
         lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second, cache_emb)
-        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd, cache_emb)
 
         log_probs = torch.log_softmax(self.output(eouts) * softmax_smoothing, dim=-1)
 
@@ -318,7 +315,6 @@ class CTC(DecoderBase):
 
             # forward/backward second-pass LM rescoring
             end_hyps = helper.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
-            end_hyps = helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
             # Normalize by length
             end_hyps = sorted(end_hyps, key=lambda x: x['score'] / max(len(x['hyp'][1:]), 1), reverse=True)
@@ -341,9 +337,6 @@ class CTC(DecoderBase):
                     if lm_second is not None:
                         logger.info('log prob (hyp, second-pass lm): %.7f' %
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
-                    if lm_second_bwd is not None:
-                        logger.info('log prob (hyp, second-pass lm, reverse): %.7f' %
-                                    (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     logger.info('-' * 50)
 
             # N-best list (exclude <eos>)

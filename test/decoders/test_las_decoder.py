@@ -192,7 +192,6 @@ def make_decode_params(**kwargs):
         recog_lm_weight=0.0,
         recog_ilm_weight=0.0,
         recog_lm_second_weight=0.0,
-        recog_lm_bwd_weight=0.0,
         recog_cache_embedding=True,
         recog_max_len_ratio=1.0,
         recog_min_len_ratio=0.2,
@@ -274,7 +273,6 @@ def make_args_rnnlm(**kwargs):
         (False, 'cold', {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
         # rescoring
         (False, '', {'recog_beam_width': 4, 'recog_lm_second_weight': 0.1}),
-        (False, '', {'recog_beam_width': 4, 'recog_lm_bwd_weight': 0.1}),
         # !!! backward
         # greedy decoding
         (True, '', {'recog_beam_width': 1}),
@@ -301,7 +299,6 @@ def make_args_rnnlm(**kwargs):
         (True, 'cold', {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
         # rescoring
         (True, '', {'recog_beam_width': 4, 'recog_lm_second_weight': 0.1}),
-        (True, '', {'recog_beam_width': 4, 'recog_lm_bwd_weight': 0.1}),
     ]
 )
 def test_decoding(backward, lm_fusion, params):
@@ -331,13 +328,10 @@ def test_decoding(backward, lm_fusion, params):
     module_rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')
     lm = None
     lm_second = None
-    lm_second_bwd = None
     if params['recog_lm_weight'] > 0:
         lm = module_rnnlm.RNNLM(args_lm).to(device)
     if params['recog_lm_second_weight'] > 0:
         lm_second = module_rnnlm.RNNLM(args_lm).to(device)
-    if params['recog_lm_bwd_weight'] > 0:
-        lm_second_bwd = module_rnnlm.RNNLM(args_lm).to(device)
     if args['lm_fusion']:
         args['external_lm'] = module_rnnlm.RNNLM(args_lm).to(device)
 
@@ -359,7 +353,7 @@ def test_decoding(backward, lm_fusion, params):
             else:
                 nbest_hyps = dec.ctc.beam_search(
                     eouts, elens, params, idx2token,
-                    lm, lm_second, lm_second_bwd, nbest=1)
+                    lm, lm_second, nbest=1)
             assert isinstance(nbest_hyps, list)
             assert len(nbest_hyps) == bs
         else:
@@ -375,7 +369,7 @@ def test_decoding(backward, lm_fusion, params):
                 assert aws[0].shape == (args['attn_n_heads'], len(nbest_hyps[0]), emax)
             else:
                 out = dec.beam_search(eouts, elens, params, idx2token,
-                                      lm, lm_second, lm_second_bwd, ctc_log_probs,
+                                      lm, lm_second, ctc_log_probs,
                                       nbest=params['nbest'], exclude_eos=params['exclude_eos'],
                                       refs_id=None, utt_ids=None, speakers=None,
                                       cache_states=True)
@@ -398,9 +392,8 @@ def test_decoding(backward, lm_fusion, params):
                     ensmbl_elens += [elens]
                     ensmbl_decs += [dec]
 
-                out = dec.beam_search(eouts, elens, params, idx2token=idx2token,
-                                      lm=lm, lm_second=lm_second, lm_second_bwd=lm_second_bwd,
-                                      ctc_log_probs=ctc_log_probs,
+                out = dec.beam_search(eouts, elens, params, idx2token,
+                                      lm, lm_second, ctc_log_probs,
                                       nbest=params['nbest'], exclude_eos=params['exclude_eos'],
                                       refs_id=None, utt_ids=None, speakers=None,
                                       ensmbl_eouts=ensmbl_eouts, ensmbl_elens=ensmbl_elens, ensmbl_decs=ensmbl_decs,

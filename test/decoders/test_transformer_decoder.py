@@ -148,7 +148,6 @@ def make_decode_params(**kwargs):
         recog_ctc_weight=0.0,
         recog_lm_weight=0.0,
         recog_lm_second_weight=0.0,
-        recog_lm_bwd_weight=0.0,
         recog_cache_embedding=True,
         recog_max_len_ratio=1.0,
         recog_min_len_ratio=0.2,
@@ -217,7 +216,6 @@ def make_args_rnnlm(**kwargs):
         (False, {'recog_beam_width': 4, 'recog_lm_weight': 0.1, 'recog_cache_embedding': False}),
         # rescoring
         (False, {'recog_beam_width': 4, 'recog_lm_second_weight': 0.1}),
-        (False, {'recog_beam_width': 4, 'recog_lm_bwd_weight': 0.1}),
         # !!! backward
         # greedy decoding
         (True, {'recog_beam_width': 1}),
@@ -260,11 +258,6 @@ def test_decoding(backward, params):
         args_lm = make_args_rnnlm()
         module = importlib.import_module('neural_sp.models.lm.rnnlm')
         lm_second = module.RNNLM(args_lm).to(device)
-    lm_second_bwd = None
-    if params['recog_lm_bwd_weight'] > 0:
-        args_lm = make_args_rnnlm()
-        module = importlib.import_module('neural_sp.models.lm.rnnlm')
-        lm_second_bwd = module.RNNLM(args_lm).to(device)
 
     ylens = [4, 5, 3, 7]
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
@@ -290,9 +283,8 @@ def test_decoding(backward, params):
             assert isinstance(aws, list)
             assert aws[0].shape == (args['n_heads'] * args['n_layers'], len(hyps[0]), emax)
         else:
-            out = dec.beam_search(eouts, elens, params, idx2token=idx2token,
-                                  lm=lm, lm_second=lm_second, lm_second_bwd=lm_second_bwd,
-                                  ctc_log_probs=ctc_log_probs,
+            out = dec.beam_search(eouts, elens, params, idx2token,
+                                  lm, lm_second, ctc_log_probs,
                                   nbest=params['nbest'], exclude_eos=params['exclude_eos'],
                                   refs_id=None, utt_ids=None, speakers=None,
                                   cache_states=params['cache_states'])
@@ -315,9 +307,8 @@ def test_decoding(backward, params):
                 ensmbl_elens += [elens]
                 ensmbl_decs += [dec]
 
-            out = dec.beam_search(eouts, elens, params, idx2token=idx2token,
-                                  lm=lm, lm_second=lm_second, lm_second_bwd=lm_second_bwd,
-                                  ctc_log_probs=ctc_log_probs,
+            out = dec.beam_search(eouts, elens, params, idx2token,
+                                  lm, lm_second, ctc_log_probs,
                                   nbest=params['nbest'], exclude_eos=params['exclude_eos'],
                                   refs_id=None, utt_ids=None, speakers=None,
                                   ensmbl_eouts=ensmbl_eouts, ensmbl_elens=ensmbl_elens, ensmbl_decs=ensmbl_decs,
