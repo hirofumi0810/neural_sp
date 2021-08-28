@@ -52,7 +52,7 @@ class Streaming(object):
 
         # threshold for CTC-based reset point detection
         self.blank_id = 0
-        self.enable_ctc_reset_point_detection = params.get('recog_ctc_vad')
+        self.ctc_reset_point_detection = params.get('recog_ctc_vad')
         self.BLANK_THRESHOLD = params.get('recog_ctc_vad_blank_threshold')
         self.SPIKE_THRESHOLD = params.get('recog_ctc_vad_spike_threshold')
         self.MAX_N_ACCUM_FRAMES = params.get('recog_ctc_vad_n_accum_frames')
@@ -156,7 +156,7 @@ class Streaming(object):
 
         return x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block
 
-    def ctc_reset_point_detection(self, ctc_probs_block, stdout=False):
+    def detect_reset_point(self, ctc_probs_block, stdout=False):
         """Reset point detection with CTC posterior probabilities.
 
         Args:
