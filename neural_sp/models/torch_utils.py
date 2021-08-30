@@ -44,7 +44,7 @@ def np2tensor(array, device=None):
     """Convert form np.ndarray to torch.Tensor.
 
     Args:
-        array (np.ndarray): A tensor of any sizes
+        array (np.ndarray): tensor of any sizes
     Returns:
         tensor (torch.Tensor):
 
@@ -57,7 +57,7 @@ def pad_list(xs, pad_value=0., pad_left=False):
     """Convert list of Tensors to a single Tensor with padding.
 
     Args:
-        xs (list): A list of length `[B]`, which contains Tensors of size `[T, input_size]`
+        xs (List[Tensor]): length `[B]`, which contains Tensors of size `[T, input_size]`
         pad_value (float):
         pad_left (bool):
     Returns:
@@ -98,11 +98,11 @@ def append_sos_eos(ys, sos, eos, pad, device, bwd=False, replace_sos=False):
     """Append <sos> and <eos> and return padded sequences.
 
     Args:
-        ys (list): A list of length `[B]`, which contains a list of size `[L]`
+        ys (List[List]): length `[B]`, which contains a list of size `[L]`
         sos (int): index for <sos>
         eos (int): index for <eos>
         pad (int): index for <pad>
-
+        device ():
         bwd (bool): reverse ys for backward reference
         replace_sos (bool): replace <sos> with the special token
     Returns:
