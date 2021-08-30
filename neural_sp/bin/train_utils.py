@@ -29,9 +29,13 @@ def compute_subsampling_factor(args):
     args.subsample_factor = 1
     args.subsample_factor_sub1 = 1
     args.subsample_factor_sub2 = 1
-    if 'conv' in args.enc_type and args.conv_poolings:
-        for p in args.conv_poolings.split('_'):
-            args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
+    if 'conv' in args.enc_type:
+        if args.conv_strides:
+            for s in args.conv_strides.split('_'):
+                args.subsample_factor *= int(s.split(',')[0].replace('(', ''))
+        if args.conv_poolings:
+            for p in args.conv_poolings.split('_'):
+                args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
     subsample = [int(s) for s in args.subsample.split('_')]
     if args.train_set_sub1:
         args.subsample_factor_sub1 = args.subsample_factor * \
@@ -99,9 +103,11 @@ def set_logger(save_path, stdout=False, rank=0):
     if rank > 0:
         level = logging.CRITICAL  # diable except for rank:0
     format = '%(asctime)s %(name)s line:%(lineno)d %(levelname)s: %(message)s'
-    logging.basicConfig(level=level,
-                        format=format,
-                        filename=save_path if not stdout else None)
+
+    file_handler = logging.FileHandler(save_path)
+    file_handler.setLevel(level)
+    file_handler.setFormatter(logging.Formatter(format))
+    logging.basicConfig(level=level, handlers=[file_handler])
 
 
 def set_save_path(save_path):
@@ -148,9 +154,9 @@ def load_checkpoint(checkpoint_path, model=None, scheduler=None, amp=None):
     # Restore parameters
     if 'avg' not in checkpoint_path:
         epoch = int(os.path.basename(checkpoint_path).split('-')[-1]) - 1
-        logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch + 1, checkpoint_path))
+        logger.info(f'=> Loading checkpoint (epoch:{epoch + 1}): {checkpoint_path}')
     else:
-        logger.info("=> Loading checkpoint: %s" % checkpoint_path)
+        logger.info(f'=> Loading checkpoint: {checkpoint_path}')
     if model is not None:
         model.load_state_dict(checkpoint['model_state_dict'])
 
