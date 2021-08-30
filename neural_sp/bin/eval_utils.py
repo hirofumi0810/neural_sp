@@ -34,7 +34,7 @@ def average_checkpoints(model, best_model_path, n_average, topk_list=[]):
     if n_average == 1:
         return model
 
-    if 'avg' in best_model_path:
+    if 'model-avg' in best_model_path:
         checkpoint_avg = torch.load(best_model_path, map_location='cpu')
         model.load_state_dict(checkpoint_avg['model_state_dict'])
         return model
