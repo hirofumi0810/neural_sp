@@ -34,7 +34,7 @@ class Wp2idx(object):
         Args:
             text (str): word sequence
         Returns:
-            token_ids (list): word-piece indices
+            token_ids (List): word-piece indices
 
         """
         # Remove space before the first special symbol
@@ -86,7 +86,7 @@ class Idx2wp(object):
         Returns:
             text (str): word sequence
                 or
-            wordpieces (list): list of words
+            wordpieces (List): list of words
 
         """
         if len(token_ids) == 0:

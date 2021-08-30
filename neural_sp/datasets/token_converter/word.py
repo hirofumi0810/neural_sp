@@ -32,7 +32,7 @@ class Word2idx(object):
         Args:
             text (str): word sequence
         Returns:
-            token_ids (list): word indices
+            token_ids (List): word indices
 
         """
         token_ids = []
@@ -83,7 +83,7 @@ class Idx2word(object):
         Returns:
             text (str): word sequence
                 or
-            words (list): list of words
+            words (List): list of words
 
         """
         words = list(map(lambda w: self.idx2token[w], token_ids))
@@ -166,7 +166,7 @@ class Word2char(object):
         Args:
             word_idx (int): a single word index
         Returns:
-            char_indices (list): character indices
+            char_indices (List): character indices
 
         """
         # word idx -> text

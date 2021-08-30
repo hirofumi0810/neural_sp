@@ -11,7 +11,7 @@ class Phone2idx(object):
 
     Args:
         dict_path (str): path to a dictionary file
-        remove_list (list): phones to ignore
+        remove_list (List): phones to ignore
 
     """
 
@@ -32,7 +32,7 @@ class Phone2idx(object):
         Args:
             text (str): phone sequence divided by spaces
         Returns:
-            token_ids (list): phone indices
+            token_ids (List): phone indices
 
         """
         phones = text.split(' ')
@@ -45,7 +45,7 @@ class Idx2phone(object):
 
     Args:
         dict_path (str): path to a dictionary file
-        remove_list (list): phones to ignore
+        remove_list (List): phones to ignore
 
     """
 
@@ -68,12 +68,12 @@ class Idx2phone(object):
         """Convert indices to phone sequence.
 
         Args:
-            token_ids (list): phone indices
+            token_ids (List): phone indices
             return_list (bool): if True, return list of phones
         Returns:
             text (str): phone sequence divided by spaces
                 or
-            phones (list): list of phones
+            phones (List): list of phones
 
         """
         phones = list(map(lambda i: self.idx2token[i], token_ids))

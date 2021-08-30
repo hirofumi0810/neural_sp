@@ -12,7 +12,7 @@ class Char2idx(object):
 
     Args:
         dict_path (str): path to a dictionary file
-        remove_list (list): characters to ignore
+        remove_list (List): characters to ignore
 
     """
 
@@ -42,7 +42,7 @@ class Char2idx(object):
         Args:
             text (str): word sequence
         Returns:
-            token_ids (list): character indices
+            token_ids (List): character indices
 
         """
         token_ids = []
@@ -70,7 +70,7 @@ class Idx2char(object):
 
     Args:
         dict_path (str): path to a dictionary file
-        remove_list (list): characters to ignore
+        remove_list (List): characters to ignore
 
     """
 
@@ -100,7 +100,7 @@ class Idx2char(object):
         Returns:
             text (str): word sequence
                 or
-            characters (list): list of characters
+            characters (List): list of characters
 
         """
         characters = list(map(lambda c: self.idx2token[c], token_ids))
