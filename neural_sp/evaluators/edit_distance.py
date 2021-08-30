@@ -10,8 +10,8 @@ def compute_per(ref, hyp, normalize=False):
     """Compute Phone Error Rate.
 
     Args:
-        ref (list): phones in the reference transcript
-        hyp (list): phones in the predicted transcript
+        ref (List): phones in the reference transcript
+        hyp (List): phones in the predicted transcript
         normalize (bool, optional): if True, divide by the length of ref
     Returns:
         per (float): Phone Error Rate between ref and hyp
@@ -59,8 +59,8 @@ def compute_wer(ref, hyp, normalize=False):
         [Reference]
             https://martin-thoma.com/word-error-rate-calculation/
     Args:
-        ref (list): words in the reference transcript
-        hyp (list): words in the predicted transcript
+        ref (List): words in the reference transcript
+        hyp (List): words in the predicted transcript
         normalize (bool, optional): if True, divide by the length of ref
     Returns:
         wer (float): Word Error Rate between ref and hyp
@@ -148,8 +148,8 @@ def wer_align(ref, hyp, normalize=False, double_byte=False):
         [Reference]
             https://github.com/zszyellow/WER-in-python
     Args:
-        ref (list): words in the reference transcript
-        hyp (list): words in the predicted transcript
+        ref (List): words in the reference transcript
+        hyp (List): words in the predicted transcript
         normalize (bool, optional): if True, divide by the length of ref
         double_byte (bool):
     Returns:

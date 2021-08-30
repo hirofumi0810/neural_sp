@@ -1,7 +1,7 @@
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Evaluate a model by accuracy."""
+"""Evaluate model by accuracy."""
 
 import logging
 from tqdm import tqdm
